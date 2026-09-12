@@ -23,6 +23,28 @@ const ERROR_CODE_MAP: Record<string, CommerceErrorCode> = {
   INTERNAL_SERVER_ERROR: "UPSTREAM_ERROR",
 };
 
+/**
+ * Resilience policy.
+ *
+ * A storefront's availability is bounded by how it behaves when its commerce
+ * backend is slow or flapping, not by how it behaves when everything is
+ * healthy. Two rules:
+ *
+ * 1. **Every request has a deadline.** An upstream that hangs must not hold a
+ *    server function open until the platform kills it. Under Partial
+ *    Prerendering the static shell has already reached the user, so a timeout
+ *    degrades one streamed hole rather than the page.
+ * 2. **Only idempotent requests are retried.** Catalogue reads are safe to
+ *    repeat. Cart writes are not: `POST /cart` *adds* quantity rather than
+ *    setting it, so a retry after a response that was actually delivered would
+ *    silently double what the customer ordered. Losing a write is recoverable
+ *    by the user; duplicating one is not.
+ */
+const REQUEST_TIMEOUT_MS = 5_000;
+const MAX_ATTEMPTS = 3;
+const RETRY_BASE_DELAY_MS = 120;
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+
 export type RequestOptions<TSchema extends z.ZodTypeAny> = {
   /** Path relative to the API base, e.g. `/products`. */
   path: string;
@@ -61,18 +83,41 @@ export async function request<TSchema extends z.ZodTypeAny>(
   if (options.cartToken) headers["x-cart-token"] = options.cartToken;
   if (options.body !== undefined) headers["content-type"] = "application/json";
 
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: options.method ?? "GET",
-      headers,
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
-      ...options.init,
-    });
-  } catch (cause) {
-    throw new CommerceError("UPSTREAM_ERROR", `Request to ${options.path} failed`, {
-      cause,
-    });
+  const method = options.method ?? "GET";
+  const idempotent = method === "GET";
+  const attempts = idempotent ? MAX_ATTEMPTS : 1;
+
+  let response: Response | undefined;
+  let lastCause: unknown;
+
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0) await backoff(attempt);
+
+    try {
+      response = await fetch(url, {
+        method,
+        headers,
+        body: options.body === undefined ? undefined : JSON.stringify(options.body),
+        ...options.init,
+        signal: withDeadline(options.init?.signal),
+      });
+    } catch (cause) {
+      // Transport failure: DNS, connection reset, or our own deadline firing.
+      lastCause = cause;
+      response = undefined;
+      continue;
+    }
+
+    if (!RETRYABLE_STATUSES.has(response.status)) break;
+    lastCause = undefined;
+  }
+
+  if (!response) {
+    throw new CommerceError(
+      "UPSTREAM_ERROR",
+      `Request to ${options.path} failed after ${attempts} attempt(s)`,
+      { cause: lastCause },
+    );
   }
 
   const payload: unknown = await response.json().catch(() => undefined);
@@ -114,4 +159,24 @@ function toCommerceError(
     status,
     details: payload,
   });
+}
+
+/**
+ * Combines the caller's abort signal (if any) with our own deadline, so a
+ * request is cancelled by whichever fires first.
+ */
+function withDeadline(callerSignal?: AbortSignal | null): AbortSignal {
+  const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  return callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+}
+
+/**
+ * Exponential backoff with full jitter. The randomisation matters more than
+ * the delay: without it, every function instance that failed at the same
+ * moment retries at the same moment, and a recovering backend is immediately
+ * knocked over again by the synchronised herd.
+ */
+function backoff(attempt: number): Promise<void> {
+  const ceiling = RETRY_BASE_DELAY_MS * 2 ** (attempt - 1);
+  return new Promise((resolve) => setTimeout(resolve, Math.random() * ceiling));
 }
