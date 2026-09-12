@@ -46,6 +46,16 @@
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  /*
+   * Reserve the scrollbar's width up front. Without this, a page that starts
+   * shorter than the viewport and then grows gains a scrollbar mid-load, which
+   * narrows the viewport and reflows everything — and Safari has no
+   * scroll-anchoring to absorb it.
+   */
+  scrollbar-gutter: stable;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

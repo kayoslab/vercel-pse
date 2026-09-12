@@ -8,13 +8,18 @@ import { Container } from "@/components/ui/container";
  * Persistent header. Everything except the cart count is static and ships in
  * the prerendered shell; the count streams into its reserved slot.
  *
+ * The background is deliberately solid rather than translucent with a
+ * backdrop-filter. Safari has long-standing repaint bugs with backdrop-filter
+ * on sticky elements that show up as a visible flicker or jump while scrolling,
+ * and a blur behind a header is not worth a rendering artifact on a storefront.
+ *
  * No mobile drawer: there are two navigation links. A hamburger menu here
  * would add a client component, a focus trap and an animation to hide two
  * words that already fit on a 320px screen.
  */
 export function SiteHeader() {
   return (
-    <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur">
+    <header className="sticky top-0 z-10 border-b border-border bg-background">
       <Container size="wide">
         <div className="flex h-16 items-center justify-between gap-4">
           <Link

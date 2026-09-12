@@ -17,7 +17,7 @@ export function Hero() {
             <span className="rounded-full border border-border bg-background px-3 py-1 text-xs font-medium text-muted">
               Official merch
             </span>
-            <h1 className="text-4xl font-semibold tracking-tight text-balance sm:text-5xl lg:text-6xl">
+            <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
               Gear worth shipping.
             </h1>
             <p className="max-w-md text-base leading-relaxed text-muted sm:text-lg">
