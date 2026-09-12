@@ -1,5 +1,6 @@
 import "server-only";
 import { commerce } from "@/lib/commerce";
+import { isFrameworkControlFlow } from "@/lib/framework";
 import type { Promotion } from "@/lib/commerce";
 
 /**
@@ -26,6 +27,12 @@ export async function getActivePromotion(): Promise<Promotion | null> {
   try {
     return await commerce.getActivePromotion();
   } catch (error) {
+    // Never swallow framework control flow. A bare catch here would silently
+    // absorb a redirect, a notFound, or the abort that ends a prerender — and
+    // during a build that last one fires once per prerendered page, filling the
+    // log with failures that would mask a real promotions outage.
+    if (isFrameworkControlFlow(error)) throw error;
+
     console.error("Promotion unavailable, rendering without banner", error);
     return null;
   }

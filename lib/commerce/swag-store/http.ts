@@ -1,6 +1,7 @@
 import "server-only";
 import type { z } from "zod";
 import { env } from "@/lib/env";
+import { isCancellation } from "@/lib/framework";
 import { CommerceError, type CommerceErrorCode } from "../errors";
 import { errorEnvelopeSchema } from "./schemas";
 
@@ -102,7 +103,14 @@ export async function request<TSchema extends z.ZodTypeAny>(
         signal: withDeadline(options.init?.signal),
       });
     } catch (cause) {
-      // Transport failure: DNS, connection reset, or our own deadline firing.
+      // A cancellation is not a failure and must not be retried: Next.js
+      // aborts in-flight fetches when a prerender finishes or a render is
+      // discarded, and retrying burns upstream requests for a result nobody
+      // is waiting for. Re-thrown untouched so React still sees its own
+      // control-flow error rather than a CommerceError wrapping it.
+      if (isCancellation(cause)) throw cause;
+
+      // Genuine transport failure: DNS, connection reset, or our own deadline.
       lastCause = cause;
       response = undefined;
       continue;
