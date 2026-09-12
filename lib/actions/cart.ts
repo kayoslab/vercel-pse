@@ -103,3 +103,70 @@ export async function addToCart(
     return { ok: false, error: "Something went wrong. Please try again." };
   }
 }
+
+/**
+ * Sets the quantity of a line, or removes it when quantity is 0.
+ *
+ * Stock is re-checked here for the same reason as `addToCart`, and with more
+ * force: the commerce API accepts *any* quantity on a cart write. Verified
+ * against it — `PATCH { quantity: 9999 }` returns 200 and a cart subtotal of
+ * $179,982. Every guard against overselling is this application's
+ * responsibility, so it cannot be skipped on the grounds that the UI already
+ * bounds the input. The input is a Client Component; its bounds are a
+ * suggestion.
+ */
+export async function updateCartItem(
+  productId: string,
+  quantity: number,
+): Promise<CartActionResult> {
+  if (!Number.isInteger(quantity) || quantity < 0) {
+    return { ok: false, error: "Please choose a valid quantity." };
+  }
+  if (quantity === 0) return removeCartItem(productId);
+
+  const token = await readCartToken();
+  if (!token) return { ok: false, error: "Your cart has expired." };
+
+  try {
+    const stock = await commerce.getStock(productId);
+    if (!stock.inStock) {
+      return { ok: false, error: "This item is no longer in stock." };
+    }
+    if (quantity > stock.quantity) {
+      return { ok: false, error: `Only ${stock.quantity} available.` };
+    }
+
+    const cart = await commerce.updateCartItem(token, productId, quantity);
+    updateTag(cacheTags.cart(token));
+    return { ok: true, totalItems: cart.totalItems };
+  } catch (error) {
+    if (isFrameworkControlFlow(error)) throw error;
+    if (isNotFound(error)) return { ok: false, error: "That item is no longer in your cart." };
+    console.error("updateCartItem failed", error);
+    return { ok: false, error: "Something went wrong. Please try again." };
+  }
+}
+
+/**
+ * Removes a line entirely.
+ *
+ * No stock check: removing can never oversell, so there is nothing to validate
+ * and no reason to spend a round trip. This is also the one mutation safe to
+ * treat as optimistic on the client without reconciliation anxiety.
+ */
+export async function removeCartItem(productId: string): Promise<CartActionResult> {
+  const token = await readCartToken();
+  if (!token) return { ok: false, error: "Your cart has expired." };
+
+  try {
+    const cart = await commerce.removeCartItem(token, productId);
+    updateTag(cacheTags.cart(token));
+    return { ok: true, totalItems: cart.totalItems };
+  } catch (error) {
+    if (isFrameworkControlFlow(error)) throw error;
+    // Already gone is the outcome the caller wanted.
+    if (isNotFound(error)) return { ok: true, totalItems: 0 };
+    console.error("removeCartItem failed", error);
+    return { ok: false, error: "Could not remove that item. Please try again." };
+  }
+}
