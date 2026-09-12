@@ -55,30 +55,34 @@ export async function getCategories(): Promise<readonly Category[]> {
   return commerce.listCategories();
 }
 
-export type SearchParams = {
+export type CatalogueQuery = {
   readonly query?: string;
   readonly category?: string;
+  readonly page?: number;
   readonly limit?: number;
 };
 
 /**
- * Search is dynamic *per request* but cacheable *per query*.
+ * One cached read behind both the catalogue page and the search page.
  *
- * The page reads `searchParams` at request time — that part cannot be cached —
- * and passes the values in here as plain arguments. Next.js derives the cache
- * key from those arguments, so two shoppers searching "hoodie" share a cache
- * entry while the page itself stays dynamic. This is the documented pattern for
- * combining runtime data with caching: read the runtime API outside the cached
- * scope, pass values in.
+ * The two differ only in which parameters they supply — the catalogue browses
+ * by category and page, search narrows by term — so they share this rather than
+ * each growing their own fetch. Results are dynamic *per request* but cacheable
+ * *per parameter set*: the page reads `searchParams` at request time, which
+ * cannot be cached, and passes plain values in here. Next.js derives the cache
+ * key from those arguments, so two shoppers on page 2 of "bags" share an entry
+ * while the page itself stays dynamic. That is the documented way to combine
+ * runtime data with caching — read the runtime API outside the cached scope.
  *
- * Tagged `products` so a catalogue change sweeps every cached result set
- * rather than leaving stale search results behind.
+ * Tagged `products` so a catalogue change sweeps every cached parameter
+ * combination rather than leaving stale listings behind.
  */
-export async function searchProducts({
+export async function listCatalogue({
   query,
   category,
-  limit = 5,
-}: SearchParams): Promise<Page<Product>> {
+  page,
+  limit,
+}: CatalogueQuery): Promise<Page<Product>> {
   "use cache";
   cacheLife("hours");
   cacheTag(cacheTags.products);
@@ -86,6 +90,7 @@ export async function searchProducts({
   return commerce.listProducts({
     search: query?.trim() || undefined,
     category: category || undefined,
+    page,
     limit,
   });
 }

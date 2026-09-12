@@ -15,16 +15,20 @@ type ProductCardProps = {
    * measured against.
    */
   priority?: boolean;
+  /**
+   * The `sizes` hint for the image, supplied by whatever lays the cards out.
+   *
+   * This belongs to the layout, not the card: only the container knows how wide
+   * a card renders at each breakpoint. Hardcoding it here — as this component
+   * originally did, matching `ProductGrid` — meant reusing the card in any other
+   * arrangement would silently request wrong-sized images. That degrades
+   * Lighthouse rather than visibly breaking, so it would not have been caught by
+   * looking at the page.
+   */
+  sizes: string;
 };
 
-/**
- * Matches the grid breakpoints in `ProductGrid`. Getting this wrong is the
- * quiet way to ship a 1600px image into a 300px slot, which shows up as a poor
- * Lighthouse score rather than as a visible bug.
- */
-const IMAGE_SIZES = "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
-
-export function ProductCard({ product, priority = false }: ProductCardProps) {
+export function ProductCard({ product, priority = false, sizes }: ProductCardProps) {
   return (
     <Link
       href={`/products/${product.slug}`}
@@ -40,7 +44,7 @@ export function ProductCard({ product, priority = false }: ProductCardProps) {
           src={product.images[0]}
           alt={product.name}
           fill
-          sizes={IMAGE_SIZES}
+          sizes={sizes}
           priority={priority}
           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         />

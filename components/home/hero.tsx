@@ -24,7 +24,7 @@ export function Hero() {
               Premium developer apparel, drinkware and desk gear — built to the
               same standard as everything else we ship.
             </p>
-            <ButtonLink href="/search" size="lg">
+            <ButtonLink href="/products" size="lg">
               Shop the collection
             </ButtonLink>
           </div>

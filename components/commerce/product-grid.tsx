@@ -11,8 +11,14 @@ type ProductGridProps = {
   priorityCount?: number;
 };
 
-/** Breakpoints here and `IMAGE_SIZES` in ProductCard must stay in agreement. */
 const GRID = "grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3";
+
+/**
+ * The `sizes` hint corresponding to `GRID`'s breakpoints. Declared next to the
+ * layout it describes so the two cannot drift apart — previously the card held
+ * this string and had no way to know what container it was in.
+ */
+const GRID_IMAGE_SIZES = "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
 
 export function ProductGrid({ products, priorityCount = 0 }: ProductGridProps) {
   return (
@@ -22,6 +28,7 @@ export function ProductGrid({ products, priorityCount = 0 }: ProductGridProps) {
           key={product.id}
           product={product}
           priority={index < priorityCount}
+          sizes={GRID_IMAGE_SIZES}
         />
       ))}
     </div>
