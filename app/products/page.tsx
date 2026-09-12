@@ -10,7 +10,7 @@ import {
   ProductResultsSkeleton,
 } from "@/components/commerce/product-results";
 import { Container } from "@/components/ui/container";
-import { getCategories, listCatalogue } from "@/lib/data/catalogue";
+import { getCategoryFacets, listCatalogue } from "@/lib/data/catalogue";
 import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "All Products";
@@ -63,8 +63,9 @@ export default function ProductsPage({ searchParams }: PageProps) {
  * what keeps it out of the dynamic boundary.
  */
 async function Filters() {
-  const categories = await getCategories();
-  return <CategoryFilter categories={categories} basePath="/products" />;
+  // No query here, so the counts are the catalogue's own per-category totals.
+  const options = await getCategoryFacets();
+  return <CategoryFilter options={options} basePath="/products" />;
 }
 
 async function Catalogue({ searchParams }: PageProps) {

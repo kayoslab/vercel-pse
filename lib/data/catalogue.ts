@@ -95,6 +95,59 @@ export async function listCatalogue({
   });
 }
 
+export type CategoryFacet = {
+  readonly slug: string;
+  readonly name: string;
+  readonly count: number;
+};
+
+/**
+ * Category options with counts that reflect the current search.
+ *
+ * A filter labelled "Mugs (2)" while searching "hoodie" is a lie — there are
+ * two mugs in the catalogue and none of them match. Counts have to be computed
+ * against the result set the shopper is actually looking at, which is what
+ * facets mean in commerce. Categories with no matches are dropped: offering a
+ * filter that leads to a guaranteed empty result is worse than not offering it.
+ *
+ * Counts deliberately ignore the selected category. A facet's own dimension is
+ * excluded from its own counts, otherwise picking "Bags" would collapse the list
+ * to Bags alone and there would be no way to see what else was available.
+ *
+ * Scale note: this derives counts by fetching all matches and grouping them,
+ * which is honest for a 28-product catalogue and wrong for a large one. A real
+ * store needs facet counts from the search backend — a single aggregation rather
+ * than a full scan. Flagged rather than hidden because it is the first thing
+ * that would have to change.
+ */
+export async function getCategoryFacets(query?: string): Promise<readonly CategoryFacet[]> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag(cacheTags.products, cacheTags.categories);
+
+  const categories = await commerce.listCategories();
+  const term = query?.trim();
+
+  if (!term) {
+    // No search: the API's own per-category totals are authoritative and cost
+    // nothing extra.
+    return categories
+      .filter((c) => c.productCount > 0)
+      .map((c) => ({ slug: c.slug, name: c.name, count: c.productCount }));
+  }
+
+  const matches = await commerce.listProducts({ search: term, limit: 100 });
+
+  const counts = new Map<string, number>();
+  for (const product of matches.items) {
+    counts.set(product.category, (counts.get(product.category) ?? 0) + 1);
+  }
+
+  return categories
+    .map((c) => ({ slug: c.slug, name: c.name, count: counts.get(c.slug) ?? 0 }))
+    .filter((c) => c.count > 0);
+}
+
 /**
  * Every product slug, for `generateStaticParams`.
  *

@@ -15,7 +15,7 @@ import {
 } from "@/components/commerce/search-input";
 import { buttonStyles } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
-import { getCategories, listCatalogue } from "@/lib/data/catalogue";
+import { getCategoryFacets, listCatalogue } from "@/lib/data/catalogue";
 import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "Search";
@@ -55,26 +55,26 @@ export default function SearchPage({ searchParams }: PageProps) {
         </div>
 
         {/*
-          The controls get their own Suspense boundary, separate from the results.
-          Two boundaries rather than one is deliberate: `useSearchParams` is
-          uncached request data, so these Client Components need a boundary for
-          the prerender — but keeping them out of the *results* boundary means a
-          search re-renders the list without remounting the input and stealing
-          the caret.
+          Two boundaries in this row, not one shared between the controls.
+
+          The filter's counts depend on the query, so it re-renders on every
+          search. If it shared a boundary with the input, that boundary would
+          re-suspend on each keystroke, remount the input and take the caret with
+          it — which makes typing impossible. Separate boundaries let the filter
+          refresh while the input keeps its identity.
+
+          Both still need a boundary of their own: `useSearchParams` counts as
+          uncached request data under Cache Components, so the build rejects
+          either one outside Suspense.
         */}
-        <Suspense
-          fallback={
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-              <SearchInputSkeleton />
-              <CategoryFilterSkeleton />
-            </div>
-          }
-        >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <Suspense fallback={<SearchInputSkeleton />}>
             <SearchInput />
-            <Filters />
-          </div>
-        </Suspense>
+          </Suspense>
+          <Suspense fallback={<CategoryFilterSkeleton />}>
+            <Filters searchParams={searchParams} />
+          </Suspense>
+        </div>
 
         {/*
           Keyed on the resolved parameters so a new search re-suspends and shows
@@ -90,10 +90,14 @@ export default function SearchPage({ searchParams }: PageProps) {
   );
 }
 
-/** Cached, so the category dropdown is prerendered into the shell. */
-async function Filters() {
-  const categories = await getCategories();
-  return <CategoryFilter categories={categories} basePath="/search" />;
+/**
+ * Counts are scoped to the active query so the dropdown cannot claim matches it
+ * does not have, and categories with no matches are omitted entirely.
+ */
+async function Filters({ searchParams }: PageProps) {
+  const { q } = await searchParams;
+  const options = await getCategoryFacets(q);
+  return <CategoryFilter options={options} basePath="/search" />;
 }
 
 async function Results({ searchParams }: PageProps) {
