@@ -33,9 +33,8 @@ export function generateMetadata(): Promise<Metadata> {
  *
  * Note what this component does *not* do: it never awaits `searchParams`. Doing
  * so here would make the whole page dynamic and there would be no static shell.
- * Instead the promise is handed to a child inside a Suspense boundary, so the
- * heading and layout prerender and only the filtered results stream. This is the
- * same shape as the product page — static frame, one dynamic hole.
+ * The promise goes to a child inside Suspense, so the heading, the filter and
+ * the layout all prerender and only the results stream.
  */
 export default function ProductsPage({ searchParams }: PageProps) {
   return (
@@ -46,19 +45,26 @@ export default function ProductsPage({ searchParams }: PageProps) {
           <p className="text-sm text-muted">{DESCRIPTION}</p>
         </div>
 
-        <Suspense
-          fallback={
-            <div className="flex flex-col gap-8">
-              <CategoryFilterSkeleton />
-              <ProductResultsSkeleton count={PAGE_SIZE} />
-            </div>
-          }
-        >
+        <Suspense fallback={<CategoryFilterSkeleton />}>
+          <Filters />
+        </Suspense>
+
+        <Suspense fallback={<ProductResultsSkeleton count={PAGE_SIZE} />}>
           <Catalogue searchParams={searchParams} />
         </Suspense>
       </div>
     </Container>
   );
+}
+
+/**
+ * Cached, so the filter is part of the prerendered shell and usable before any
+ * results arrive. It reads its own selection from the URL client-side, which is
+ * what keeps it out of the dynamic boundary.
+ */
+async function Filters() {
+  const categories = await getCategories();
+  return <CategoryFilter categories={categories} basePath="/products" />;
 }
 
 async function Catalogue({ searchParams }: PageProps) {
@@ -68,12 +74,11 @@ async function Catalogue({ searchParams }: PageProps) {
   const parsed = Number(page);
   const currentPage = Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
 
-  // Categories are cached and independent of the filter, so both reads start
-  // together rather than the list waiting on the dropdown's data.
-  const [categories, results] = await Promise.all([
-    getCategories(),
-    listCatalogue({ category, page: currentPage, limit: PAGE_SIZE }),
-  ]);
+  const results = await listCatalogue({
+    category,
+    page: currentPage,
+    limit: PAGE_SIZE,
+  });
 
   const hrefForPage = (next: number) => {
     const params = new URLSearchParams();
@@ -85,14 +90,11 @@ async function Catalogue({ searchParams }: PageProps) {
 
   return (
     <div className="flex flex-col gap-8">
-      <CategoryFilter categories={categories} selected={category} basePath="/products" />
       <ProductResults
         products={results.items}
         pagination={results.pagination}
         emptyMessage="No products in this category yet."
         emptyHint="Try a different category, or browse everything."
-        // The first row is above the fold on this page, unlike search results
-        // which sit below a search box.
         priorityCount={3}
       />
       <PaginationControls pagination={results.pagination} hrefForPage={hrefForPage} />
