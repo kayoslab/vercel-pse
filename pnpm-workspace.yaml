@@ -1,0 +1,5 @@
+# sharp powers next/image optimisation; unrs-resolver backs eslint module resolution.
+# Both ship native binaries and need their install scripts to run.
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
