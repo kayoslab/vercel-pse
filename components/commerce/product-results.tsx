@@ -1,4 +1,5 @@
 import { ProductGrid, ProductGridSkeleton } from "@/components/commerce/product-grid";
+import type { ReactNode } from "react";
 import type { Pagination, Product } from "@/lib/commerce";
 
 type ProductResultsProps = {
@@ -7,6 +8,12 @@ type ProductResultsProps = {
   emptyMessage: string;
   /** Optional supporting line under the empty message. */
   emptyHint?: string;
+  /**
+   * Optional control rendered in the empty state — a way *out* of it. An empty
+   * result the shopper cannot act on is a dead end; a reason plus a single
+   * escape is not.
+   */
+  emptyAction?: ReactNode;
   /** Rendered as a count line when supplied. */
   pagination?: Pagination;
   priorityCount?: number;
@@ -45,6 +52,7 @@ export function ProductResults({
   products,
   emptyMessage,
   emptyHint,
+  emptyAction,
   pagination,
   priorityCount = 0,
 }: ProductResultsProps) {
@@ -55,6 +63,7 @@ export function ProductResults({
       >
         <p className="text-base font-medium text-foreground">{emptyMessage}</p>
         {emptyHint && <p className="text-sm text-muted">{emptyHint}</p>}
+        {emptyAction && <div className="mt-2">{emptyAction}</div>}
       </div>
     );
   }

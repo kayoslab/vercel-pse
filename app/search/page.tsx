@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import type { Metadata } from "next";
 import {
   CategoryFilter,
@@ -12,6 +13,7 @@ import {
   SearchInput,
   SearchInputSkeleton,
 } from "@/components/commerce/search-input";
+import { buttonStyles } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { getCategories, listCatalogue } from "@/lib/data/catalogue";
 import { pageMetadata } from "@/lib/seo";
@@ -107,12 +109,21 @@ async function Results({ searchParams }: PageProps) {
     limit: searched ? RESULT_LIMIT : DEFAULT_LIMIT,
   });
 
+  /*
+   * A new search term clears the category, so this combination can only arise
+   * deliberately — by picking a category while a search is already active. It is
+   * still worth naming: an empty result has to explain itself, and the fastest
+   * way out of a filter that is hiding everything is a link that drops it.
+   */
+  const narrowedByCategory = searched && results.items.length === 0 && Boolean(category);
+  const categoryLabel = category?.replace(/-/g, " ");
+
   return (
     <div className="flex flex-col gap-4">
       {searched && (
         <p className="text-sm text-muted">
           {results.pagination.total === 0
-            ? `No matches for “${query}”`
+            ? `No matches for “${query}”${narrowedByCategory ? ` in ${categoryLabel}` : ""}`
             : `Showing ${results.items.length} of ${results.pagination.total} match${
                 results.pagination.total === 1 ? "" : "es"
               } for “${query}”`}
@@ -121,12 +132,28 @@ async function Results({ searchParams }: PageProps) {
       <ProductResults
         products={results.items}
         emptyMessage={
-          searched ? `No products match “${query}”.` : "No products available."
+          narrowedByCategory
+            ? `No ${categoryLabel} match “${query}”.`
+            : searched
+              ? `No products match “${query}”.`
+              : "No products available."
         }
         emptyHint={
-          searched
-            ? "Try a shorter term, or clear the category filter."
-            : undefined
+          narrowedByCategory
+            ? "The category filter is narrowing these results."
+            : searched
+              ? "Try a shorter or more general term."
+              : undefined
+        }
+        emptyAction={
+          narrowedByCategory ? (
+            <Link
+              href={`/search?q=${encodeURIComponent(query)}`}
+              className={buttonStyles({ variant: "secondary" })}
+            >
+              Search all categories
+            </Link>
+          ) : undefined
         }
       />
     </div>

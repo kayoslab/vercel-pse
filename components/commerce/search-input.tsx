@@ -49,6 +49,14 @@ export function SearchInput() {
     else params.delete("q");
     // A new search starts at the beginning of the results.
     params.delete("page");
+    // And it clears any category still selected from earlier browsing.
+    //
+    // Without this, a stale filter silently empties a fresh search: someone who
+    // narrows to "mugs", then searches "hoodie", gets "No matches for hoodie" —
+    // a message that blames their search term for a constraint they have
+    // forgotten they applied. Search is the broader intent of the two, so a new
+    // term wins over an old filter.
+    params.delete("category");
 
     const qs = params.toString();
     lastUrlQuery.current = trimmed;
