@@ -40,7 +40,18 @@ function toFailure(error: unknown, fallback: string): CartOperationResult {
   return { ok: false, error: fallback };
 }
 
-/** Adds to the existing quantity — the upstream POST is additive, not absolute. */
+/**
+ * Adds to the existing quantity — the upstream POST is additive, not absolute.
+ *
+ * That additivity is why the guard has to read the cart. Validating only the
+ * increment against stock looks correct and is not: with 13 in stock, six adds of
+ * 10 each pass individually and leave 60 units in the cart. Found by driving the
+ * MCP endpoint in a loop, but the UI path had the same hole — it just takes more
+ * clicking. What must be checked is the *resulting* quantity.
+ *
+ * The two reads run in parallel so the correctness fix costs one round trip
+ * rather than two.
+ */
 export async function addItem(
   token: string,
   productId: string,
@@ -51,8 +62,33 @@ export async function addItem(
   }
 
   try {
-    const guard = await guardStock(productId, quantity);
-    if (!guard.ok) return guard;
+    const [stock, existingCart] = await Promise.all([
+      commerce.getStock(productId),
+      commerce.getCart(token),
+    ]);
+
+    if (!stock.inStock) return { ok: false, error: "This item is out of stock." };
+
+    const alreadyInCart =
+      existingCart?.lines.find((line) => line.productId === productId)?.quantity ?? 0;
+    const resulting = alreadyInCart + quantity;
+
+    if (resulting > stock.quantity) {
+      const headroom = Math.max(0, stock.quantity - alreadyInCart);
+      // Three phrasings, because "only 7 more available — your cart already has
+      // 0" is the kind of copy that makes a shopper distrust the number.
+      if (alreadyInCart === 0) {
+        return { ok: false, error: `Only ${stock.quantity} available.` };
+      }
+      return {
+        ok: false,
+        error:
+          headroom === 0
+            ? `Your cart already has all ${stock.quantity} available.`
+            : `Only ${headroom} more available — your cart already has ${alreadyInCart}.`,
+      };
+    }
+
     return { ok: true, cart: await commerce.addToCart(token, productId, quantity) };
   } catch (error) {
     return toFailure(error, "Could not add that item.");
