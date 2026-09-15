@@ -67,15 +67,15 @@ export function Hero() {
  * most reduced.
  *
  * The geometry deliberately matches the vgpu scene's canonical triangle
- * (height ≈ 22.9% of the box, centroid-centred: see TRIANGLE_HEIGHT_RATIO in
+ * (height = 40% of the box, centroid-centred: see TRIANGLE_HEIGHT_RATIO in
  * triangle-led/settings.ts), so when the canvas fades in over this SVG the
  * lit triangle appears exactly where the white one was — a power-on moment,
- * not a jump.
+ * not a jump. Change the two together.
  */
 function HeroMark() {
   return (
     <svg viewBox="0 0 400 300" className="h-auto w-full" role="presentation">
-      <path d="M200 104.3 239.6 172.9H160.4z" fill="#ffffff" />
+      <path d="M200 70 269.3 190H130.7z" fill="#ffffff" />
     </svg>
   );
 }

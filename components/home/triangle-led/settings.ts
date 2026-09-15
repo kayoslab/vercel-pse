@@ -4,7 +4,12 @@ export interface RenderSize {
 }
 
 export const LEDS_PER_EDGE = 24;
-export const TRIANGLE_HEIGHT_RATIO = (180 / 630) * 0.8;
+// Local change from the published example: the gallery renders the triangle at
+// (180/630)*0.8 ≈ 22.9% of the canvas height — sized for a full-viewport hero
+// backdrop. In this hero the canvas is one grid column, so the mark is scaled
+// up to 40% to read as the subject rather than an accent. The SVG fallback in
+// hero.tsx mirrors this ratio; change them together.
+export const TRIANGLE_HEIGHT_RATIO = 0.4;
 export const HERO_CANVAS_MAX_CSS = 720;
 const MIN_SIM_HEIGHT = 360;
 const LED_RADIUS_TO_TRIANGLE_HEIGHT = 0.0236;
