@@ -113,13 +113,14 @@ export function HeroCanvas() {
   return (
     /*
       Absolutely positioned inside the mark's container, so its presence can
-      never change the hero's layout. The dark panel look is deliberate — the
-      scene renders LED light on a black floor, and framing it as a screen
-      reads as intentional in both colour schemes.
+      never change the hero's layout. No frame or rounding: the hero section
+      is itself black, so the scene's black floor merges into the page and
+      only the light exists — the SVG's white triangle crossfades into the
+      LED-lit one in place.
     */
     <div
       aria-hidden
-      className={`absolute inset-0 overflow-hidden rounded-2xl bg-black transition-opacity duration-700 ${
+      className={`absolute inset-0 overflow-hidden bg-black transition-opacity duration-700 ${
         active ? "opacity-100" : "pointer-events-none opacity-0"
       }`}
     >

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ComponentProps, ReactNode } from "react";
 
-type Variant = "primary" | "secondary";
+type Variant = "primary" | "secondary" | "inverse";
 type Size = "md" | "lg";
 
 const VARIANTS = {
@@ -9,6 +9,13 @@ const VARIANTS = {
     "bg-accent text-accent-foreground hover:opacity-90 disabled:hover:opacity-100",
   secondary:
     "border border-border bg-surface-raised text-foreground hover:bg-surface disabled:hover:bg-surface-raised",
+  /**
+   * For deliberately dark surfaces (the hero) that keep one look in both
+   * themes. The theme-aware `primary` maps to black-on-black there in light
+   * mode; this stays white-on-black always.
+   */
+  inverse:
+    "bg-white text-black hover:opacity-90 disabled:hover:opacity-100 focus-visible:outline-white",
 } as const satisfies Record<Variant, string>;
 
 const SIZES = {
