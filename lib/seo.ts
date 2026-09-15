@@ -55,6 +55,28 @@ export async function pageMetadata({
       description,
       url: path,
       locale: "en_US",
+      /*
+       * The default share card, stated explicitly for the same shallow-merge
+       * reason this helper exists: the root `app/opengraph-image.tsx` file
+       * convention attaches its image at the root segment, but a child page
+       * defining `openGraph` replaces the parent's resolved object — images
+       * included — so /search, /products and /cart shipped imageless cards.
+       * The root-segment page skips this: the file convention already tags it,
+       * and adding a second reference would emit a duplicate og:image.
+       * Pages with a better image (the PDP's product shot) override this.
+       */
+      ...(rootSegment
+        ? {}
+        : {
+            images: [
+              {
+                url: "/opengraph-image",
+                width: 1200,
+                height: 630,
+                alt: `${storeName} — official merchandise`,
+              },
+            ],
+          }),
     },
     twitter: {
       card: "summary_large_image",
