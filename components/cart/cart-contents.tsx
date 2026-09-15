@@ -7,7 +7,7 @@ import { useCartBadge } from "@/components/cart/cart-badge-context";
 import { Price } from "@/components/commerce/price";
 import { Button } from "@/components/ui/button";
 import { QuantityStepper } from "@/components/ui/quantity-stepper";
-import { removeCartItem, updateCartItem } from "@/lib/actions/cart";
+import { removeCartItem, updateCartItem, type CartActionResult } from "@/lib/actions/cart";
 import type { Cart, CartLine } from "@/lib/commerce";
 import { money, multiply } from "@/lib/money";
 
@@ -61,7 +61,7 @@ export function CartContents({ cart }: CartContentsProps) {
   const [lines, applyOptimistic] = useOptimistic(cart.lines, reduce);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
-  const { adjust: adjustBadge } = useCartBadge();
+  const { begin: beginBadge, settle: settleBadge } = useCartBadge();
 
   const currency = cart.subtotal.currency;
   const subtotal = money(
@@ -72,16 +72,14 @@ export function CartContents({ cart }: CartContentsProps) {
 
   /*
    * `countDelta` is the change in total item count this action implies. It is
-   * applied to the shared badge context for exactly the pending window and
-   * released when the action settles — the same moment the action's re-render
-   * delivers the fresh server count — so the header badge moves in the same
-   * frame as the optimistic lines below instead of trailing them by the
-   * mutation's full round trip.
+   * applied to the shared badge context for exactly the pending window, so
+   * the header badge moves in the same frame as the optimistic lines below
+   * instead of trailing them by the mutation's full round trip.
    */
   const run = (
     action: Action,
     countDelta: number,
-    call: () => Promise<{ ok: boolean; error?: string }>,
+    call: () => Promise<CartActionResult>,
   ) => {
     /*
      * Applied BEFORE the transition, deliberately: a plain state update made
@@ -89,21 +87,28 @@ export function CartContents({ cart }: CartContentsProps) {
      * the slow action settles — which would hold the badge at the old count
      * for the whole round trip, the exact mismatch this exists to fix.
      * (`useOptimistic` renders early inside transitions; ordinary state does
-     * not.) The release stays inside, so it commits in the same render as the
-     * action's fresh server count and the hand-off is invisible.
+     * not.)
      */
-    adjustBadge(countDelta);
+    beginBadge(countDelta);
     startTransition(async () => {
       applyOptimistic(action);
       setError(null);
+      let result: CartActionResult | undefined;
       try {
-        const result = await call();
+        result = await call();
         // A failure needs no rollback: the optimistic value is discarded when
         // the Server Action's re-render supplies the real cart. All that is
         // missing is telling the shopper why nothing changed.
         if (!result.ok) setError(result.error ?? "Something went wrong.");
       } finally {
-        adjustBadge(-countDelta);
+        /*
+         * Settling hands the badge the count the action itself reported. The
+         * delta release commits before the router applies the revalidated
+         * tree, so without that authoritative bridge the badge would fall
+         * back to the stale server count for a frame or two — a visible
+         * 3 → 2 → 3 flicker on every adjustment.
+         */
+        settleBadge(countDelta, result?.ok ? result.totalItems : undefined);
       }
     });
   };

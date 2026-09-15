@@ -1,18 +1,34 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { useCartBadge } from "@/components/cart/cart-badge-context";
 
 /**
- * The badge itself, client-side so it can add the shared pending delta to the
- * server-streamed count. `count` is the cached per-token truth; `delta` covers
- * the seconds a mutation is in flight, so the badge agrees with the cart
- * page's optimistic lines instead of trailing them. Clamped at zero: a remove
+ * The badge itself, client-side so it can combine three inputs that are
+ * fresh at different moments: the server-streamed `count` (the cached
+ * per-token truth), the settled-action `override` (authoritative the instant
+ * a mutation completes, before the revalidated tree arrives), and the
+ * pending `delta` for mutations still in flight. Clamped at zero: a remove
  * settling against an already-refreshed count must not flash a negative.
  */
 export function CartBadgeLink({ count }: { count: number }) {
-  const { delta } = useCartBadge();
-  const shown = Math.max(0, count + delta);
+  const { delta, override, clearOverride } = useCartBadge();
+
+  /*
+   * Once a *new* server-rendered count arrives, the override has served its
+   * purpose — and holding it longer would mask counts changed by other
+   * surfaces (an assistant add refreshing the router, another tab).
+   */
+  const lastCount = useRef(count);
+  useEffect(() => {
+    if (count !== lastCount.current) {
+      lastCount.current = count;
+      clearOverride();
+    }
+  }, [count, clearOverride]);
+
+  const shown = Math.max(0, (override ?? count) + delta);
 
   return (
     <Link
