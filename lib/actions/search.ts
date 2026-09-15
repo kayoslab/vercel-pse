@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { parseSearchIntent } from "@/lib/agent/capabilities";
+import { listCatalogue } from "@/lib/data/catalogue";
 import { isFrameworkControlFlow } from "@/lib/framework";
 
 /** Bounds cost on a public, unauthenticated endpoint. */
@@ -30,8 +31,9 @@ export async function searchByDescription(formData: FormData): Promise<void> {
   const params = new URLSearchParams();
   try {
     const intent = await parseSearchIntent(utterance);
-    if (intent.query?.trim()) params.set("q", intent.query.trim());
-    if (intent.category) params.set("category", intent.category);
+    const resolved = await resolveAgainstCatalogue(intent);
+    if (resolved.query) params.set("q", resolved.query);
+    if (resolved.category) params.set("category", resolved.category);
   } catch (error) {
     // redirect() itself throws — never swallow it into the fallback.
     if (isFrameworkControlFlow(error)) throw error;
@@ -40,4 +42,37 @@ export async function searchByDescription(formData: FormData): Promise<void> {
 
   if (params.size === 0) params.set("q", utterance);
   redirect(`/search?${params.toString()}`);
+}
+
+/**
+ * Validates the model's parse against reality before committing to it.
+ *
+ * The parse can produce a query and a category that are each defensible but
+ * jointly empty — "insulated" and "mugs", say, when the insulated products
+ * live in drinkware. A prompt rule reduces this; it cannot eliminate it,
+ * because it is asking a model to know the catalogue's shape. So the parse is
+ * checked deterministically instead: if the combination finds nothing, degrade
+ * to whichever half has results — category first, since browsing a relevant
+ * category beats a one-word text match. Redirecting a shopper to a knowably
+ * empty page when a populated interpretation exists would waste the parse.
+ *
+ * `listCatalogue` is cached per parameter set, so these probes are cheap and
+ * repeat utterances get faster.
+ */
+async function resolveAgainstCatalogue(intent: {
+  query?: string;
+  category?: string;
+}): Promise<{ query?: string; category?: string }> {
+  const query = intent.query?.trim() || undefined;
+  const category = intent.category || undefined;
+
+  if (!query || !category) return { query, category };
+
+  const combined = await listCatalogue({ query, category, limit: 1 });
+  if (combined.pagination.total > 0) return { query, category };
+
+  const categoryOnly = await listCatalogue({ category, limit: 1 });
+  if (categoryOnly.pagination.total > 0) return { category };
+
+  return { query };
 }
