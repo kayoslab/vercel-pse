@@ -13,6 +13,7 @@ import {
   SearchInput,
   SearchInputSkeleton,
 } from "@/components/commerce/search-input";
+import { NaturalSearch } from "@/components/commerce/natural-search";
 import { buttonStyles } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
 import { getCategoryFacets, listCatalogue } from "@/lib/data/catalogue";
@@ -75,6 +76,13 @@ export default function SearchPage({ searchParams }: PageProps) {
             <Filters searchParams={searchParams} />
           </Suspense>
         </div>
+
+        {/*
+          Natural-language entry to the same page. No Suspense needed: the
+          form reads no request data — it only *produces* search state, by
+          redirecting to a regular /search URL. Part of the static shell.
+        */}
+        <NaturalSearch />
 
         {/*
           Keyed on the resolved parameters so a new search re-suspends and shows
