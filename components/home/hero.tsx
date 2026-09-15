@@ -22,15 +22,11 @@ export function Hero() {
       <Container size="wide">
         <div className="grid items-center gap-10 py-16 sm:py-24 lg:grid-cols-2 lg:gap-16">
           <div className="flex flex-col items-start gap-6">
-            <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-white/80">
-              Official merch
-            </span>
             <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
               Gear worth shipping.
             </h1>
             <p className="max-w-md text-base leading-relaxed text-white/70 sm:text-lg">
-              Premium developer apparel, drinkware and desk gear — built to the
-              same standard as everything else we ship.
+              Official Vercel apparel, drinkware and desk gear.
             </p>
             <ButtonLink href="/products" size="lg" variant="inverse">
               Shop the collection

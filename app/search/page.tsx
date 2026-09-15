@@ -49,10 +49,7 @@ export default function SearchPage({ searchParams }: PageProps) {
   return (
     <Container size="wide">
       <div className="flex flex-col gap-8 py-10 sm:py-14">
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{TITLE}</h1>
-          <p className="text-sm text-muted">{DESCRIPTION}</p>
-        </div>
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{TITLE}</h1>
 
         {/*
           Two boundaries in this row, not one shared between the controls.

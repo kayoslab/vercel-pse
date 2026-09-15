@@ -19,9 +19,8 @@ export function SiteFooter() {
   return (
     <footer className="mt-auto border-t border-border bg-surface">
       <Container size="wide">
-        <div className="flex flex-col items-center justify-between gap-2 py-8 text-xs text-muted sm:flex-row sm:text-sm">
+        <div className="flex justify-center py-8 text-xs text-muted sm:text-sm">
           <p>© {process.env.BUILD_YEAR} Vercel Swag Store. All rights reserved.</p>
-          <p>Built with Next.js on Vercel.</p>
         </div>
       </Container>
     </footer>
