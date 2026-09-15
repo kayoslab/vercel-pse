@@ -6,21 +6,11 @@ import { SiteFooter } from "@/components/layout/site-footer";
 import { Assistant } from "@/components/agent/assistant";
 import { SiteHeader } from "@/components/layout/site-header";
 import { getStoreConfig } from "@/lib/data/store";
+import { SITE_URL } from "@/lib/seo";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
-
-/**
- * Absolute base for Open Graph URLs. Social crawlers do not resolve relative
- * paths, so without this the preview image silently fails to load in exactly
- * the places a share is meant to work. Vercel supplies the production hostname
- * as a system environment variable, so this needs no manual configuration per
- * environment.
- */
-const siteUrl = process.env.VERCEL_PROJECT_PRODUCTION_URL
-  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-  : "http://localhost:3000";
 
 /**
  * Root metadata is derived from the store's own configuration rather than
@@ -35,7 +25,9 @@ export async function generateMetadata(): Promise<Metadata> {
   const { seo, storeName } = await getStoreConfig();
 
   return {
-    metadataBase: new URL(siteUrl),
+    // Social crawlers do not resolve relative paths; this makes every
+    // relative og:url/og:image absolute.
+    metadataBase: new URL(SITE_URL),
     title: {
       default: seo.defaultTitle,
       template: seo.titleTemplate,

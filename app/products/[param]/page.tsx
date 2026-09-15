@@ -9,7 +9,7 @@ import {
 } from "@/components/commerce/purchase-panel";
 import { Container } from "@/components/ui/container";
 import { getAllProductSlugs, getProduct } from "@/lib/data/catalogue";
-import { pageMetadata } from "@/lib/seo";
+import { pageMetadata, SITE_URL } from "@/lib/seo";
 
 type PageProps = {
   /** The brief names this segment `param`, so the folder and type match it. */
@@ -64,8 +64,40 @@ export default async function ProductPage({ params }: PageProps) {
   // error — render the 404 page rather than a crash.
   if (!product) notFound();
 
+  /*
+   * Product structured data for rich results. Built from the same cached
+   * product read as the page, so it prerenders into the static shell.
+   * `availability` is deliberately absent: stock randomises per request, so
+   * any availability claim baked into a cached shell would be wrong by the
+   * time a crawler read it — a missing field reads as "unknown", a wrong one
+   * as a lie. The `<` escape keeps API-sourced text from ever closing the
+   * script tag.
+   */
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: product.name,
+    description: product.description,
+    image: product.images,
+    sku: product.id,
+    brand: { "@type": "Brand", name: "Vercel" },
+    offers: {
+      "@type": "Offer",
+      url: `${SITE_URL}/products/${product.slug}`,
+      priceCurrency: product.price.currency,
+      price: (product.price.amount / 100).toFixed(2),
+      itemCondition: "https://schema.org/NewCondition",
+    },
+  };
+
   return (
     <Container size="wide">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c"),
+        }}
+      />
       <div className="grid gap-8 py-10 sm:py-14 lg:grid-cols-2 lg:gap-14">
         {/*
           Aspect-ratio box reserves the image's space before it loads. This

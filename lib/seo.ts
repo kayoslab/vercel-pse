@@ -2,6 +2,16 @@ import "server-only";
 import type { Metadata } from "next";
 import { getStoreConfig } from "@/lib/data/store";
 
+/**
+ * Absolute base for anything that must be a full URL — Open Graph tags, the
+ * sitemap, robots. Vercel supplies the production hostname as a system env
+ * var, so no per-environment configuration; the localhost fallback keeps
+ * local builds honest.
+ */
+export const SITE_URL = process.env.VERCEL_PROJECT_PRODUCTION_URL
+  ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+  : "http://localhost:3000";
+
 type PageMetadataInput = {
   /** Page name only — the store name is appended where the template cannot. */
   title: string;

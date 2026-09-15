@@ -3,10 +3,11 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * Progressive enhancement over the hero's SVG mark: the same triangle,
+ * Progressive enhancement over the brand mark's SVG: the same triangle,
  * rendered live by vgpu (Vercel Labs' WebGPU library) with LED edge lighting
  * that follows the pointer — the "Triangle LED Hero" example from vgpu's
- * verified examples gallery, adapted in `./triangle-led/`.
+ * verified examples gallery, adapted in `./triangle-led/`. Consumed through
+ * `TriangleMark`, which the hero, the 404 page and the error page share.
  *
  * The SVG stays canonical. It is what prerenders into the static shell, what
  * social crawlers and no-JS visitors see, and what every gate below falls
@@ -17,18 +18,18 @@ import { useEffect, useRef, useState } from "react";
  * The gates, in order:
  * - `navigator.gpu` present — WebGPU is the whole point; no polyfill fallback.
  * - `prefers-reduced-motion: no-preference` — this is continuous animation.
- * - `lg` viewport — on phones the mark renders at 176px, too small to justify
+ * - `lg` viewport — on phones the mark renders small, too small to justify
  *   a render loop on battery; the static SVG is the better citizen there.
  * - First idle after hydration — the ~60KB renderer chunk is dynamically
  *   imported and never enters the critical path.
  *
- * While running, the loop pauses when the tab is hidden or the hero scrolls
+ * While running, the loop pauses when the tab is hidden or the mark scrolls
  * out of view, and the whole renderer is torn down if the viewport drops
  * below `lg`. WebGPU init can still fail after `navigator.gpu` exists (no
  * adapter, blocklisted driver) — that failure is caught and the SVG simply
  * remains.
  */
-export function HeroCanvas() {
+export function TriangleCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [active, setActive] = useState(false);
 
@@ -114,7 +115,7 @@ export function HeroCanvas() {
     /*
       Absolutely positioned inside the mark's container, so its presence can
       never change the hero's layout. No frame or rounding: the hero section
-      is itself black, so the scene's black floor merges into the page and
+      behind it is black, so the scene's black floor merges into the page and
       only the light exists — the SVG's white triangle crossfades into the
       LED-lit one in place.
     */
