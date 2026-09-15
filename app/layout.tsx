@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { CartBadgeProvider } from "@/components/cart/cart-badge-context";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { Assistant } from "@/components/agent/assistant";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -66,8 +67,16 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
       <body className="flex min-h-dvh flex-col bg-background text-foreground">
-        <SiteHeader />
-        <main className="flex-1">{children}</main>
+        {/*
+          Client context sharing the pending cart delta between the header
+          badge and the cart page, so the two cannot disagree while a slow
+          mutation is in flight. Deterministic, so it costs the static shell
+          nothing; the server components inside stay server components.
+        */}
+        <CartBadgeProvider>
+          <SiteHeader />
+          <main className="flex-1">{children}</main>
+        </CartBadgeProvider>
         <SiteFooter />
         {/*
           Fixed overlay, so it cannot shift any page it sits on.

@@ -46,14 +46,27 @@ export function Assistant() {
      * as the agent having lied. Only refreshing on a successful add avoids
      * re-requesting the tree after every search.
      */
-    onFinish: ({ message }) => {
-      if (!changedTheCart(message)) return;
-      // A Server Action, not router.refresh(): only a Server Action can call
-      // `updateTag` to expire the cached cart immediately, and its response
-      // re-renders the header in the same round trip.
-      void refreshCartCache().then(() => router.refresh());
-    },
   });
+
+  /*
+   * Refresh the badge the moment a successful addToCart tool result streams
+   * in — not in onFinish, which waits for the model to finish writing its
+   * whole reply. The model's text says "added" right after it sees the tool
+   * result, so the badge must move at the same point or the two disagree for
+   * as long as the model keeps typing. Each tool call refreshes exactly once,
+   * keyed by toolCallId.
+   */
+  const refreshedAdds = useRef(new Set<string>());
+  useEffect(() => {
+    for (const id of successfulAddIds(messages.at(-1))) {
+      if (refreshedAdds.current.has(id)) continue;
+      refreshedAdds.current.add(id);
+      // A Server Action, not just router.refresh(): only a Server Action can
+      // call `updateTag` to expire the cached cart immediately, and its
+      // response re-renders the header in the same round trip.
+      void refreshCartCache().then(() => router.refresh());
+    }
+  }, [messages, router]);
 
   const busy = status === "submitted" || status === "streaming";
 
@@ -229,15 +242,23 @@ export function Assistant() {
 }
 
 /**
- * True when a message contains an addToCart call that actually succeeded. The
- * model reporting success in prose is not evidence — the tool output is.
+ * Tool-call ids of addToCart calls in this message that actually succeeded.
+ * The model reporting success in prose is not evidence — the tool output is.
  */
-function changedTheCart(message: { parts: Array<{ type: string }> }): boolean {
-  return message.parts.some((part) => {
-    if (part.type !== "tool-addToCart") return false;
-    const output = (part as { output?: unknown }).output;
-    return Boolean(output && typeof output === "object" && (output as { added?: unknown }).added === true);
-  });
+function successfulAddIds(
+  message: { role: string; parts: Array<{ type: string }> } | undefined,
+): string[] {
+  if (!message || message.role !== "assistant") return [];
+  const ids: string[] = [];
+  for (const part of message.parts) {
+    if (part.type !== "tool-addToCart") continue;
+    const { output, toolCallId } = part as { output?: unknown; toolCallId?: string };
+    const added = Boolean(
+      output && typeof output === "object" && (output as { added?: unknown }).added === true,
+    );
+    if (added && toolCallId) ids.push(toolCallId);
+  }
+  return ids;
 }
 
 /**

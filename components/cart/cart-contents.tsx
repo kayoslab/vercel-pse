@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useOptimistic, useState, useTransition } from "react";
+import { useCartBadge } from "@/components/cart/cart-badge-context";
 import { Price } from "@/components/commerce/price";
 import { Button } from "@/components/ui/button";
 import { QuantityStepper } from "@/components/ui/quantity-stepper";
@@ -60,6 +61,7 @@ export function CartContents({ cart }: CartContentsProps) {
   const [lines, applyOptimistic] = useOptimistic(cart.lines, reduce);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
+  const { adjust: adjustBadge } = useCartBadge();
 
   const currency = cart.subtotal.currency;
   const subtotal = money(
@@ -68,15 +70,41 @@ export function CartContents({ cart }: CartContentsProps) {
   );
   const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
 
-  const run = (action: Action, call: () => Promise<{ ok: boolean; error?: string }>) => {
+  /*
+   * `countDelta` is the change in total item count this action implies. It is
+   * applied to the shared badge context for exactly the pending window and
+   * released when the action settles — the same moment the action's re-render
+   * delivers the fresh server count — so the header badge moves in the same
+   * frame as the optimistic lines below instead of trailing them by the
+   * mutation's full round trip.
+   */
+  const run = (
+    action: Action,
+    countDelta: number,
+    call: () => Promise<{ ok: boolean; error?: string }>,
+  ) => {
+    /*
+     * Applied BEFORE the transition, deliberately: a plain state update made
+     * inside an async transition is entangled with it and only commits when
+     * the slow action settles — which would hold the badge at the old count
+     * for the whole round trip, the exact mismatch this exists to fix.
+     * (`useOptimistic` renders early inside transitions; ordinary state does
+     * not.) The release stays inside, so it commits in the same render as the
+     * action's fresh server count and the hand-off is invisible.
+     */
+    adjustBadge(countDelta);
     startTransition(async () => {
       applyOptimistic(action);
       setError(null);
-      const result = await call();
-      // A failure needs no rollback: the optimistic value is discarded when the
-      // Server Action's re-render supplies the real cart. All that is missing is
-      // telling the shopper why nothing changed.
-      if (!result.ok) setError(result.error ?? "Something went wrong.");
+      try {
+        const result = await call();
+        // A failure needs no rollback: the optimistic value is discarded when
+        // the Server Action's re-render supplies the real cart. All that is
+        // missing is telling the shopper why nothing changed.
+        if (!result.ok) setError(result.error ?? "Something went wrong.");
+      } finally {
+        adjustBadge(-countDelta);
+      }
     });
   };
 
@@ -131,6 +159,7 @@ export function CartContents({ cart }: CartContentsProps) {
                   value={line.quantity}
                   onChange={(next) =>
                     run({ type: "setQuantity", productId: line.productId, quantity: next },
+                      next - line.quantity,
                       () => updateCartItem(line.productId, next))
                   }
                   /*
@@ -144,6 +173,7 @@ export function CartContents({ cart }: CartContentsProps) {
                   type="button"
                   onClick={() =>
                     run({ type: "remove", productId: line.productId },
+                      -line.quantity,
                       () => removeCartItem(line.productId))
                   }
                   className="text-sm text-muted underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
