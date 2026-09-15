@@ -1,5 +1,4 @@
 import "server-only";
-import { generateText, Output } from "ai";
 import { z } from "zod";
 import { addItem } from "@/lib/cart-service";
 import { commerce } from "@/lib/commerce";
@@ -177,84 +176,4 @@ export async function createCart() {
     cartToken: cart.token,
     note: "Pass this cartToken to view_cart and add_to_cart. It expires after 24h of inactivity.",
   };
-}
-
-// ------------------------------------------------------- natural language
-
-/**
- * Same model as the in-app assistant, through the same AI Gateway/OIDC path —
- * no provider key exists anywhere in this project.
- */
-const INTENT_MODEL = "anthropic/claude-opus-5";
-
-export type SearchIntent = {
-  readonly query?: string;
-  readonly category?: string;
-};
-
-/**
- * Maps a shopper's description to the store's structured search parameters —
- * the capability layer's third consumer, after the assistant and MCP.
- *
- * The point is what it reuses: `query` is the same field, with the same
- * `describe()`, that types the `searchProducts` tool, and the category enum is
- * built from the live (cached) category list, so the model can only ever emit
- * a slug that actually exists. The parser cannot drift from the tools because
- * they are the same schema.
- *
- * Constraints the store cannot filter by (price, size, colour-as-a-filter) are
- * deliberately folded into or dropped from the free-text query rather than
- * pretended at: a parameter the backend ignores would make the parse look
- * smarter than the search it feeds.
- */
-export async function parseSearchIntent(utterance: string): Promise<SearchIntent> {
-  const categories = await getCategoryFacets();
-  const slugs = categories.map((c) => c.slug);
-
-  const schema = z.object({
-    query: searchProductsSchema.query,
-    category:
-      slugs.length > 0
-        ? z
-            .enum(slugs as [string, ...string[]])
-            .optional()
-            .describe("Only when the request clearly maps to one product category.")
-        : z.string().optional(),
-  });
-
-  /*
-   * The upstream search is a strict AND-match over the words: every word must
-   * literally occur in a product's name, description or tags, so "coffee"
-   * matches nothing (the catalogue never uses the word) while "insulated"
-   * matches two products. Verified empirically — which is why the prompt
-   * demands concrete product vocabulary and prefers the category filter,
-   * rather than letting the model write a descriptive phrase that ANDs
-   * itself to zero results.
-   */
-  const result = await generateText({
-    model: INTENT_MODEL,
-    output: Output.object({ schema }),
-    system:
-      "Convert a shopper's description into search parameters for a merchandise " +
-      "store selling apparel, drinkware, desk gear, bags, stationery and " +
-      "accessories.\n\n" +
-      "The search engine requires EVERY word of the query to literally appear " +
-      "in a product's name or tags, so descriptive phrases find nothing. " +
-      "Prefer selecting a category alone. Add a query only when the shopper " +
-      "names a concrete product type, material or feature — a single word like " +
-      "'hoodie', 'insulated', 'ceramic', 'notebook' — never intent words like " +
-      "'gift', 'coffee' or 'warm', and never more than two words. Give both " +
-      "fields only when they agree — the query must name something that " +
-      "belongs inside the chosen category; when unsure, return only one of " +
-      "the two. Ignore constraints the search cannot express, such as price " +
-      "or sizing.\n\n" +
-      "Categories (slug — name):\n" +
-      categories.map((c) => `${c.slug} — ${c.name}`).join("\n"),
-    prompt: utterance,
-    providerOptions: {
-      gateway: { tags: ["feature:nl-search", "app:swag-store"] },
-    },
-  });
-
-  return result.output;
 }

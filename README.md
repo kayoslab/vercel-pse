@@ -1,6 +1,6 @@
 # Vercel Swag Store
 
-A storefront for Vercel merchandise, built on **Next.js 16 with Cache Components** against a documented ecommerce API — and built to be read. Every page demonstrates a deliberate static/dynamic split, every cart mutation is a Server Action, and the store's capabilities are defined once and consumed four ways: by the human UI, by an in-app shopping assistant, by any external agent over MCP — and by the search page itself, which turns a shopper's description into structured filters through the same schemas.
+A storefront for Vercel merchandise, built on **Next.js 16 with Cache Components** against a documented ecommerce API — and built to be read. Every page demonstrates a deliberate static/dynamic split, every cart mutation is a Server Action, and the store's capabilities are defined once and consumed three ways: by the human UI, by an in-app shopping assistant, and by any external agent over MCP.
 
 **Live:** https://vercel-swag-store-lac.vercel.app
 **MCP endpoint:** `https://vercel-swag-store-lac.vercel.app/api/mcp`
@@ -92,7 +92,7 @@ Details that took iteration:
 
 ## The agentic layer
 
-**One typed capability layer, consumed four ways.** `lib/agent/capabilities.ts` holds the store's operations as plain functions with zod schemas — search, product details, live stock, categories, cart read/write. Four consumers:
+**One typed capability layer, consumed three ways.** `lib/agent/capabilities.ts` holds the store's operations as plain functions with zod schemas — search, product details, live stock, categories, cart read/write. Three consumers:
 
 1. **The human UI** — Server Components and Server Actions calling the same underlying data layer.
 2. **The in-app assistant** (`/api/chat`, AI SDK v6 + Claude via Vercel AI Gateway) — wraps the capabilities as streaming tools; retrieved products render as clickable cards in the conversation, and a successful add refreshes the router so the header badge agrees with what the assistant just said.
@@ -102,13 +102,13 @@ Details that took iteration:
    claude mcp add --transport http swag-store https://vercel-swag-store-lac.vercel.app/api/mcp
    ```
 
-4. **Natural-language search** on `/search` — a "describe it" form posts to a Server Action that maps the utterance to structured filters via the *same* zod schema that types the `searchProducts` tool (the category enum is built from the live category list, so the model can only emit slugs that exist), then redirects to a regular `/search` URL. The parse produces nothing but ordinary `searchParams` state — shareable, refreshable, and working with JavaScript disabled: POST, parse, 303. Two behaviours worth naming: the upstream search is a strict AND-match over words (verified: "coffee" matches nothing in this catalogue), so the prompt demands concrete product vocabulary and prefers the category filter over descriptive phrases; the parse is then validated against the actual catalogue before the redirect — a query+category pair that finds nothing degrades to whichever half has results, because a prompt rule can reduce jointly-empty parses but only a deterministic check can eliminate them; and a failed parse falls back to using the utterance as a literal query — degraded is a worse search, never a dead one.
-
 What differs between consumers is only the **session**: the browser has an httpOnly cookie; an MCP client has no cookies, so it calls `create_cart` once and carries the token explicitly. That difference is isolated in an injected `CartSession`, and the capability functions never know which caller they serve.
 
 The design earned its keep concretely: driving the MCP endpoint in a loop surfaced the oversell bug described above — once, in one place, fixed for all three consumers simultaneously. That is the argument for the shared layer in one sentence.
 
 The endpoint is deliberately unauthenticated: everything readable is already public on the storefront, cart writes require possession of an unguessable token, and a bearer requirement would make the server undemonstrable. A production store would put brokered identity in front of it (`withMcpAuth` / Vercel Connect) so carts belong to authenticated shoppers and per-client rate limits exist — the same applies to `/api/chat`, where a WAF rate-limit rule is the right first step.
+
+*Considered and not built:* natural-language → structured search filters feeding `/search` (the same zod schemas that type the tools could type a `generateObject` parser). Left out to keep the layer's surface exactly as large as what is demonstrably consumed.
 
 ## The hero
 
@@ -168,4 +168,5 @@ Conventions throughout: Server Components by default, `'use client'` only where 
 
 - **Checkout and payment** — the cart's checkout button is disabled and labelled as such; a silent dead button would be worse than a stated boundary.
 - **Authentication** — the brief's cart is anonymous by specification; cross-device persistence is explicitly not required.
+- **NL → structured search filters** — designed (the tool schemas already type it), not shipped; see the agentic section.
 - **Rate limiting on the public agent endpoints** — documented above with the production-shaped answer (WAF rules, brokered identity) rather than a token gesture in code.
