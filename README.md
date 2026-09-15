@@ -5,7 +5,7 @@ A storefront for Vercel merchandise, built on **Next.js 16 with Cache Components
 **Live:** https://vercel-swag-store-lac.vercel.app
 **MCP endpoint:** `https://vercel-swag-store-lac.vercel.app/api/mcp`
 
-The intended audience is a partner or solutions team picking this up as an accelerator: the patterns here — the caching spine, the partial-prerendering boundaries, the agent-ready capability layer — are the transferable artifact. The swag is the demo data.
+The intended audience is a partner or solutions team picking this up as an accelerator: the patterns here — the caching spine, the partial-prerendering boundaries, the agent-ready capability layer, and a commerce data layer built as a **port with one adapter** — are the transferable artifact. Swap the adapter, keep the storefront; the swag is just the demo data.
 
 ---
 
@@ -148,9 +148,12 @@ components/
   cart/, commerce/      storefront components + their skeleton twins
   home/triangle-led/    vendored vgpu example (SHA-verified, changes named)
 lib/
-  commerce/             API client: envelope unwrapping, bypass header,
-                        error mapping, zod-validated responses — nothing
-                        downstream sees the wire format
+  commerce/             the CommerceProvider port (provider.ts) with one
+                        adapter (swag-store/): envelope unwrapping, bypass
+                        header, error mapping, zod-validated responses.
+                        Nothing in app/ imports a vendor module — pointing
+                        this storefront at another backend means writing a
+                        second adapter, not touching the UI
   data/                 cached read layer ('use cache' + tags live here)
   actions/              Server Actions (cart mutations, session)
   agent/                capabilities.ts (the shared tool layer) + wrappers
