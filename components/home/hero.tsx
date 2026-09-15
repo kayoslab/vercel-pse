@@ -1,4 +1,5 @@
 import { ButtonLink } from "@/components/ui/button";
+import { HeroCanvas } from "@/components/home/hero-canvas";
 import { Container } from "@/components/ui/container";
 
 /**
@@ -34,9 +35,20 @@ export function Hero() {
             The brief names a visual element as part of the hero, so it is
             present at every viewport — scaled down on small screens rather
             than hidden. Being inline SVG it costs nothing to keep.
+
+            On desktops with WebGPU, `HeroCanvas` fades a live vgpu-rendered
+            version of the same mark in over the SVG — see hero-canvas.tsx for
+            the gates. The wrapper is `relative` and the canvas absolute, so
+            the enhancement occupies exactly the SVG's box and cannot shift
+            layout. `aspect-[4/3]` pins that box: the SVG's own 400×300
+            viewBox already implies it, but the canvas needs it stated.
           */}
-          <div className="mx-auto w-44 sm:w-60 lg:mx-0 lg:w-full" aria-hidden>
+          <div
+            className="relative mx-auto aspect-[4/3] w-44 sm:w-60 lg:mx-0 lg:w-full"
+            aria-hidden
+          >
             <HeroMark />
+            <HeroCanvas />
           </div>
         </div>
       </Container>

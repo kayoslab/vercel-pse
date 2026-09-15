@@ -17,6 +17,17 @@ const nextConfig: NextConfig = {
   // cached with `use cache`. Unifies the former ppr/useCache/dynamicIO flags.
   cacheComponents: true,
 
+  // vgpu example shaders are authored as .wgsl modules; the loader turns each
+  // into a JS string export (with WGSL imports resolved) at build time.
+  turbopack: {
+    rules: {
+      "*.wgsl": {
+        loaders: ["@vgpu/wgsl/loader-webpack"],
+        as: "*.js",
+      },
+    },
+  },
+
   images: {
     remotePatterns: [
       {

@@ -1,5 +1,16 @@
 # sharp powers next/image optimisation; unrs-resolver backs eslint module resolution.
 # Both ship native binaries and need their install scripts to run.
 allowBuilds:
+  # vgpu's Node adapters ship Dawn prebuilds for headless rendering. This app
+  # only uses vgpu in the browser, so the native downloads are skipped.
+  '@vgpu/adapter-node': false
   sharp: true
   unrs-resolver: true
+  webgpu: false
+minimumReleaseAgeExclude:
+  - '@vgpu/adapter-mock@0.5.0'
+  - '@vgpu/adapter-node@0.5.0'
+  - '@vgpu/core@0.5.0'
+  - '@vgpu/wgsl-std@0.5.0'
+  - '@vgpu/wgsl@0.5.0'
+  - vgpu@0.5.0
