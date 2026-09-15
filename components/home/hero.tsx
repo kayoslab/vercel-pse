@@ -3,10 +3,11 @@ import { Container } from "@/components/ui/container";
 
 /**
  * The hero's visual is an inline SVG rather than a photograph, and that is a
- * performance decision as much as an aesthetic one: it makes the Largest
- * Contentful Paint the headline text, which is already in the prerendered
- * HTML, instead of an image that has to be fetched and decoded first. Nothing
- * above the fold waits on the network, and there is no image box to reserve.
+ * performance decision as much as an aesthetic one: it ships inside the
+ * prerendered HTML, costs no network request, and cannot shift layout. On
+ * desktop that makes the Largest Contentful Paint the headline text; on
+ * narrow viewports the LCP is the first product card image further down,
+ * which is why the grid's first row is fetched eagerly with high priority.
  */
 export function Hero() {
   return (
@@ -29,7 +30,12 @@ export function Hero() {
             </ButtonLink>
           </div>
 
-          <div className="hidden lg:block" aria-hidden>
+          {/*
+            The brief names a visual element as part of the hero, so it is
+            present at every viewport — scaled down on small screens rather
+            than hidden. Being inline SVG it costs nothing to keep.
+          */}
+          <div className="mx-auto w-44 sm:w-60 lg:mx-0 lg:w-full" aria-hidden>
             <HeroMark />
           </div>
         </div>

@@ -10,9 +10,12 @@ import type { Product } from "@/lib/commerce";
 type ProductCardProps = {
   product: Product;
   /**
-   * Set on the first card above the fold. It marks the image as the likely LCP
-   * element so Next preloads it instead of lazy-loading the thing the score is
-   * measured against.
+   * Set on cards in the first row above the fold. Renders the image with
+   * `loading="eager"` and `fetchPriority="high"` so the likely LCP element is
+   * fetched immediately instead of lazy-loaded. Next 16 deprecated the Image
+   * `priority` prop in favour of `preload`, but a preload link is the wrong
+   * tool for a grid — which card is the LCP depends on the viewport, and the
+   * docs advise `fetchPriority` for exactly that case.
    */
   priority?: boolean;
   /**
@@ -45,7 +48,8 @@ export function ProductCard({ product, priority = false, sizes }: ProductCardPro
           alt={product.name}
           fill
           sizes={sizes}
-          priority={priority}
+          loading={priority ? "eager" : undefined}
+          fetchPriority={priority ? "high" : undefined}
           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         />
       </div>

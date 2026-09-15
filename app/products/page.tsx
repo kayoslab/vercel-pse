@@ -49,6 +49,8 @@ export default function ProductsPage({ searchParams }: PageProps) {
           <Filters />
         </Suspense>
 
+        {/* Product cards render <h3>; this keeps the heading outline sequential. */}
+        <h2 className="sr-only">Results</h2>
         <Suspense fallback={<ProductResultsSkeleton count={PAGE_SIZE} />}>
           <Catalogue searchParams={searchParams} />
         </Suspense>

@@ -25,13 +25,3 @@ export async function getStock(idOrSlug: string): Promise<StockLevel> {
   return commerce.getStock(idOrSlug);
 }
 
-/**
- * Stock for a mutation path, where being wrong is expensive.
- *
- * Read immediately before writing, never from a render-time value. A quantity
- * the user selected thirty seconds ago was validated against a number that has
- * already changed, so the Server Action re-checks rather than trusting it.
- */
-export async function getStockForMutation(idOrSlug: string): Promise<StockLevel> {
-  return commerce.getStock(idOrSlug);
-}

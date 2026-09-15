@@ -82,6 +82,8 @@ export default function SearchPage({ searchParams }: PageProps) {
           indication that anything is happening. The controls keep their own
           pending styling for the sub-second case.
         */}
+        {/* Product cards render <h3>; this keeps the heading outline sequential. */}
+        <h2 className="sr-only">Results</h2>
         <Suspense fallback={<ProductResultsSkeleton count={RESULT_LIMIT} />}>
           <Results searchParams={searchParams} />
         </Suspense>
@@ -135,6 +137,7 @@ async function Results({ searchParams }: PageProps) {
       )}
       <ProductResults
         products={results.items}
+        priorityCount={3}
         emptyMessage={
           narrowedByCategory
             ? `No ${categoryLabel} match “${query}”.`

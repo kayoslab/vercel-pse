@@ -68,9 +68,11 @@ export default async function ProductPage({ params }: PageProps) {
     <Container size="wide">
       <div className="grid gap-8 py-10 sm:py-14 lg:grid-cols-2 lg:gap-14">
         {/*
-          Aspect-ratio box reserves the image's space before it loads, and
-          `priority` marks it as the LCP candidate so it is preloaded rather
-          than lazily fetched.
+          Aspect-ratio box reserves the image's space before it loads. This
+          image is the LCP element at every viewport, so it is fetched eagerly
+          with fetchPriority="high" — the Next 16 replacement for the
+          deprecated `priority` prop. The page is prerendered static HTML, so
+          the request is discovered as soon as the document arrives.
         */}
         <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-surface">
           <Image
@@ -78,7 +80,8 @@ export default async function ProductPage({ params }: PageProps) {
             alt={product.name}
             fill
             sizes="(min-width: 1024px) 50vw, 100vw"
-            priority
+            loading="eager"
+            fetchPriority="high"
             className="object-cover"
           />
         </div>
