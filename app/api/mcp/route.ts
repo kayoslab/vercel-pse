@@ -149,4 +149,61 @@ function asText(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value, null, 2) }] };
 }
 
-export { handler as GET, handler as POST, handler as DELETE };
+/**
+ * GET is two different callers with two correct answers.
+ *
+ * An MCP client GETs this endpoint (Accept: text/event-stream) to open the
+ * spec's optional server→client SSE stream; this server does not offer one,
+ * and the Streamable HTTP spec mandates 405 for that — which is what the
+ * delegated handler returns, and why 405s on this route in the logs are a
+ * client probing the optional stream, not an error.
+ *
+ * A human clicking the endpoint link in the README (Accept: text/html) is
+ * not an MCP client, and a bare 405 would read as broken. They get a page
+ * that says what this is and how to connect an agent to it.
+ */
+export async function GET(request: Request) {
+  if (request.headers.get("accept")?.includes("text/html")) {
+    return new Response(EXPLAINER_HTML, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    });
+  }
+  return handler(request);
+}
+
+const EXPLAINER_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Swag Store MCP</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #000; color: #fff;
+         font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  main { max-width: 40rem; padding: 3rem 1.5rem; text-align: center; }
+  svg { width: 72px; height: auto; margin-bottom: 1.5rem; }
+  h1 { font-size: 1.5rem; margin: 0 0 .75rem; letter-spacing: -0.02em; }
+  p { color: rgba(255,255,255,.7); line-height: 1.6; margin: 0 0 1.25rem; }
+  pre { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.15); border-radius: 8px;
+        padding: 1rem; text-align: left; overflow-x: auto; font-size: .85rem; line-height: 1.5; }
+  a { color: #fff; }
+</style>
+</head>
+<body>
+<main>
+  <svg viewBox="0 0 400 300" role="presentation"><path d="M200 70 269.3 190H130.7z" fill="#fff"/></svg>
+  <h1>Vercel Swag Store — MCP endpoint</h1>
+  <p>This is a Model Context Protocol server (Streamable HTTP). It speaks JSON-RPC over POST —
+     there is nothing further to see in a browser. Point an agent at it instead:</p>
+  <pre>claude mcp add --transport http swag-store \
+  https://vercel-swag-store-lac.vercel.app/api/mcp</pre>
+  <p>Seven tools: search, product details, live stock, categories, and an anonymous
+     token-scoped cart. <a href="/">Back to the store</a></p>
+</main>
+</body>
+</html>
+`;
+
+export { handler as POST, handler as DELETE };
