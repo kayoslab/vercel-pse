@@ -9,7 +9,7 @@ import {
   setQuantity,
   type CartOperationResult,
 } from "@/lib/cart-service";
-import { commerce } from "@/lib/commerce";
+import { commerce, type Cart } from "@/lib/commerce";
 import { CART_COOKIE, readCartToken } from "@/lib/data/cart";
 
 /**
@@ -55,7 +55,7 @@ async function persistToken(token: string): Promise<void> {
  * nothing worth recovering, so the shopper is simply told the cart expired.
  */
 async function withCart(
-  operate: (token: string) => Promise<CartOperationResult>,
+  operate: (token: string, freshCart?: Cart) => Promise<CartOperationResult>,
   options: { createIfMissing: boolean },
 ): Promise<CartActionResult> {
   const existing = await readCartToken();
@@ -75,7 +75,9 @@ async function withCart(
 
   const created = await commerce.createCart();
   await persistToken(created.token);
-  const result = await operate(created.token);
+  // Hand the freshly created cart to the operation so it need not re-read it:
+  // it is empty by construction, and this API's `GET /cart` costs ~1.7s.
+  const result = await operate(created.token, created);
   if (!result.ok) return { ok: false, error: result.error };
   updateTag(cacheTags.cart(created.token));
   return { ok: true, totalItems: result.cart.totalItems };
@@ -85,7 +87,7 @@ export async function addToCart(
   productId: string,
   quantity: number,
 ): Promise<CartActionResult> {
-  return withCart((token) => addItem(token, productId, quantity), {
+  return withCart((token, freshCart) => addItem(token, productId, quantity, freshCart), {
     createIfMissing: true,
   });
 }

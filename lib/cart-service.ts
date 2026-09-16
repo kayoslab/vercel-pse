@@ -51,11 +51,19 @@ function toFailure(error: unknown, fallback: string): CartOperationResult {
  *
  * The two reads run in parallel so the correctness fix costs one round trip
  * rather than two.
+ *
+ * `knownCart` lets a caller that already holds the current cart skip the read
+ * entirely. The one caller today is the first-add path, which has just created
+ * the cart — empty by construction — and the API's cart endpoints are slow
+ * enough (~1.7s measured for `GET /cart`) that re-fetching a value we hold is
+ * a full second and a half of spinner. `null` means "known to have no cart";
+ * only `undefined` triggers the fetch.
  */
 export async function addItem(
   token: string,
   productId: string,
   quantity: number,
+  knownCart?: Cart | null,
 ): Promise<CartOperationResult> {
   if (!Number.isInteger(quantity) || quantity < 1) {
     return { ok: false, error: "Quantity must be a whole number of at least 1." };
@@ -64,7 +72,7 @@ export async function addItem(
   try {
     const [stock, existingCart] = await Promise.all([
       commerce.getStock(productId),
-      commerce.getCart(token),
+      knownCart !== undefined ? knownCart : commerce.getCart(token),
     ]);
 
     if (!stock.inStock) return { ok: false, error: "This item is out of stock." };
