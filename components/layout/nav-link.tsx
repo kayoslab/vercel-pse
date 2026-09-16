@@ -25,7 +25,7 @@ export function NavLink({ href, children }: NavLinkProps) {
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`rounded-md px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+      className={`relative rounded-md px-3 py-2 text-sm transition-colors after:absolute after:inset-x-0 after:-inset-y-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
         active
           ? "font-medium text-foreground"
           : "text-muted hover:text-foreground"

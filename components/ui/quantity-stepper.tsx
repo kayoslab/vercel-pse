@@ -82,12 +82,18 @@ function Step({
   children: React.ReactNode;
 }) {
   return (
+    /*
+      The rendered button is 36px — visually right inside the bordered group —
+      but Apple's guideline for touch targets is 44pt, and these are the two
+      most-tapped controls on a phone. The invisible ::after overlay extends
+      the hit area to 44px without moving a pixel of layout.
+    */
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
       disabled={disabled}
-      className="size-9 shrink-0 text-base text-foreground transition-colors hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="relative size-9 shrink-0 text-base text-foreground transition-colors after:absolute after:-inset-1 hover:bg-surface disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       {children}
     </button>

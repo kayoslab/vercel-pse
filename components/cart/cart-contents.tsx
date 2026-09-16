@@ -118,7 +118,10 @@ export function CartContents({ cart }: CartContentsProps) {
       <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
         <p className="text-base font-medium">Your cart is empty.</p>
         <p className="text-sm text-muted">Nothing added yet — have a look around.</p>
-        <Link href="/products" className="mt-2 text-sm font-medium underline">
+        <Link
+          href="/products"
+          className="relative mt-2 text-sm font-medium underline after:absolute after:inset-x-0 after:-inset-y-3"
+        >
           Browse products
         </Link>
       </div>

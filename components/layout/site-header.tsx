@@ -24,7 +24,7 @@ export function SiteHeader() {
         <div className="flex h-16 items-center justify-between gap-4">
           <Link
             href="/"
-            className="flex items-center gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="relative flex items-center gap-2 rounded-md after:absolute after:inset-x-0 after:-inset-y-3 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
             <Logo />
             <span className="text-sm font-semibold tracking-tight sm:text-base">

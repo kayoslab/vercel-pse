@@ -101,7 +101,11 @@ export function SearchInput() {
         aria-busy={pending}
         className="h-10 min-w-0 flex-1 rounded-md border border-border bg-surface-raised px-3 text-sm text-foreground transition-opacity placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-busy:opacity-60"
       />
-      <Button type="submit" variant="secondary" className="shrink-0">
+      <Button
+        type="submit"
+        variant="secondary"
+        className="relative shrink-0 after:absolute after:inset-x-0 after:-inset-y-0.5"
+      >
         Search
       </Button>
       {/*

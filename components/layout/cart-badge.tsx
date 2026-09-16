@@ -34,7 +34,7 @@ export function CartBadgeLink({ count }: { count: number }) {
     <Link
       href="/cart"
       aria-label={shown > 0 ? `Cart, ${shown} item${shown === 1 ? "" : "s"}` : "Cart, empty"}
-      className="relative inline-flex size-10 items-center justify-center rounded-md text-foreground transition-colors hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+      className="relative inline-flex size-10 items-center justify-center rounded-md text-foreground transition-colors after:absolute after:-inset-0.5 hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
     >
       <CartIcon />
       {shown > 0 && (
