@@ -1,9 +1,6 @@
-import { AddToCartForm } from "@/components/commerce/add-to-cart-form";
+import { PurchaseControls } from "@/components/commerce/purchase-controls";
 import { Button } from "@/components/ui/button";
-import {
-  StockIndicator,
-  StockIndicatorSkeleton,
-} from "@/components/commerce/stock-indicator";
+import { StockIndicatorSkeleton } from "@/components/commerce/stock-indicator";
 import { getStock } from "@/lib/data/stock";
 
 type PurchasePanelProps = {
@@ -17,6 +14,8 @@ type PurchasePanelProps = {
  * derived from one stock reading, so they stream as a single unit. Splitting
  * them would mean two boundaries resolving independently and a window in which
  * the button is enabled for an item the indicator already says is sold out.
+ * The reading is handed to one client component (PurchaseControls) so a failed
+ * add can move all three to the fresher number the guard rejected on.
  *
  * Everything else on the page — image, name, price, description — is cached and
  * ships in the prerendered shell.
@@ -24,16 +23,7 @@ type PurchasePanelProps = {
 export async function PurchasePanel({ productId }: PurchasePanelProps) {
   const stock = await getStock(productId);
 
-  return (
-    <div className="flex flex-col gap-5">
-      <StockIndicator stock={stock} />
-      <AddToCartForm
-        productId={productId}
-        maxQuantity={stock.quantity}
-        disabled={!stock.inStock}
-      />
-    </div>
-  );
+  return <PurchaseControls productId={productId} initialStock={stock} />;
 }
 
 /**

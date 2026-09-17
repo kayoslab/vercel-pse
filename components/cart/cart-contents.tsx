@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useOptimistic, useState, useTransition } from "react";
+import { useRef, useState } from "react";
 import { useCartBadge } from "@/components/cart/cart-badge-context";
 import { Price } from "@/components/commerce/price";
 import { Button } from "@/components/ui/button";
@@ -15,105 +15,143 @@ type CartContentsProps = {
   cart: Cart;
 };
 
-type Action =
-  | { type: "setQuantity"; productId: string; quantity: number }
-  | { type: "remove"; productId: string };
-
 /**
- * Applies a pending change to the lines so the UI can move before the server
- * confirms. Line totals and the subtotal are recomputed from the same data the
- * API would use — unit price × quantity — so the optimistic figures match what
- * comes back rather than approximating it.
+ * A mutation the server has not confirmed yet. `opId` ties each in-flight
+ * action to its overlay entry, so a failure only rolls back its own entry and
+ * never one that a faster follow-up mutation has already replaced.
  */
-function reduce(lines: readonly CartLine[], action: Action): readonly CartLine[] {
-  switch (action.type) {
-    case "remove":
-      return lines.filter((l) => l.productId !== action.productId);
-    case "setQuantity":
-      return lines
-        .map((l) =>
-          l.productId === action.productId
-            ? {
-                ...l,
-                quantity: action.quantity,
-                lineTotal: multiply(l.product.price, action.quantity),
-              }
-            : l,
-        )
-        .filter((l) => l.quantity > 0);
-  }
-}
+type PendingOp =
+  | { type: "remove"; opId: number }
+  | { type: "setQuantity"; quantity: number; opId: number };
+
+/** What a caller specifies; `run` stamps the opId. */
+type PendingOpInput = { type: "remove" } | { type: "setQuantity"; quantity: number };
 
 /**
  * Everything mutable about the cart, in one Client Component.
  *
- * Lines *and* the subtotal live together on purpose: cart mutations take
- * 1–4 seconds against this API, and a quantity that moves instantly while the
- * total below it lags for three seconds looks broken. Keeping them in one
- * optimistic state means they always agree.
+ * ## Why this is NOT useOptimistic + startTransition
  *
- * Optimism is safe here in a way it was not on the product page. Decreasing and
- * removing cannot be rejected, and an increase that exceeds stock is corrected
- * by the server re-render along with an explicit message — whereas an
- * optimistic *add* could claim an item was in the cart when it never made it.
+ * It was, and the optimistic UI was flawless — while you stayed on the page.
+ * React entangles overlapping transitions: an awaited Server Action inside
+ * startTransition holds a pending transition open for its entire network
+ * round trip, and any navigation started in that window cannot commit until
+ * the action settles. Against this API's multi-second cart endpoints, on a
+ * slow connection, that reads as the whole site freezing — measured: 83ms to
+ * navigate away from the cart normally, 4,166ms with a removal in flight.
+ *
+ * So mutations here run as plain promises with an explicit pending overlay:
+ *
+ * - The overlay applies instantly (quantity moves, a removing line dims), so
+ *   the immediate feedback survives the change.
+ * - No transition is ever left pending, so navigation commits immediately.
+ *   Next.js is built for this: its router prioritises navigations over
+ *   in-flight actions and re-applies the action's revalidation afterwards.
+ * - An overlay entry is not cleared when its action resolves — it is cleared
+ *   when the server-rendered props catch up and agree with it. Clearing on
+ *   resolve would flash the stale value for the frames between the action
+ *   settling and the router applying the revalidated tree; this is the same
+ *   override-until-truth-arrives pattern the header badge uses.
+ *
+ * Lines *and* the subtotal derive from one overlay so they always agree, and
+ * a removing line stays visible — dimmed, with a spinner — rather than
+ * vanishing while the server still owns it.
  */
 export function CartContents({ cart }: CartContentsProps) {
-  const [lines, applyOptimistic] = useOptimistic(cart.lines, reduce);
+  const [pending, setPending] = useState<ReadonlyMap<string, PendingOp>>(new Map());
   const [error, setError] = useState<string | null>(null);
-  const [, startTransition] = useTransition();
   const { begin: beginBadge, settle: settleBadge } = useCartBadge();
-
-  const currency = cart.subtotal.currency;
-  const subtotal = money(
-    lines.reduce((sum, l) => sum + l.lineTotal.amount, 0),
-    currency,
-  );
-  const itemCount = lines.reduce((sum, l) => sum + l.quantity, 0);
+  const nextOpId = useRef(0);
 
   /*
-   * `countDelta` is the change in total item count this action implies. It is
-   * applied to the shared badge context for exactly the pending window, so
-   * the header badge moves in the same frame as the optimistic lines below
-   * instead of trailing them by the mutation's full round trip.
+   * Prune overlay entries the server has caught up with — during render, the
+   * documented adjust-state-on-prop-change pattern. A `remove` entry is spent
+   * when its line is gone from the props; a `setQuantity` entry when the
+   * server line shows its quantity.
    */
+  const spent = [...pending.entries()].filter(([productId, op]) => {
+    const line = cart.lines.find((l) => l.productId === productId);
+    if (op.type === "remove") return !line;
+    return line?.quantity === op.quantity;
+  });
+  if (spent.length > 0) {
+    setPending((m) => {
+      const next = new Map(m);
+      for (const [productId] of spent) next.delete(productId);
+      return next;
+    });
+  }
+
+  /** Server lines with the pending overlay applied. */
+  const lines = cart.lines.map((line) => {
+    const op = pending.get(line.productId);
+    if (!op || op.type === "remove") {
+      return { line, removing: op?.type === "remove" };
+    }
+    return {
+      line: {
+        ...line,
+        quantity: op.quantity,
+        lineTotal: multiply(line.product.price, op.quantity),
+      } satisfies CartLine,
+      removing: false,
+    };
+  });
+
+  const active = lines.filter((l) => !l.removing);
+  const currency = cart.subtotal.currency;
+  const subtotal = money(
+    active.reduce((sum, l) => sum + l.line.lineTotal.amount, 0),
+    currency,
+  );
+  const itemCount = active.reduce((sum, l) => sum + l.line.quantity, 0);
+
   const run = (
-    action: Action,
+    productId: string,
+    op: PendingOpInput,
     countDelta: number,
     call: () => Promise<CartActionResult>,
   ) => {
-    /*
-     * Applied BEFORE the transition, deliberately: a plain state update made
-     * inside an async transition is entangled with it and only commits when
-     * the slow action settles — which would hold the badge at the old count
-     * for the whole round trip, the exact mismatch this exists to fix.
-     * (`useOptimistic` renders early inside transitions; ordinary state does
-     * not.)
-     */
+    const opId = ++nextOpId.current;
+    const entry: PendingOp =
+      op.type === "remove"
+        ? { type: "remove", opId }
+        : { type: "setQuantity", quantity: op.quantity, opId };
+    setError(null);
+    // The badge shifts in the same breath as the lines, from the shared
+    // context — see cart-badge-context.tsx for the settle-gap mechanics.
     beginBadge(countDelta);
-    startTransition(async () => {
-      applyOptimistic(action);
-      setError(null);
-      let result: CartActionResult | undefined;
-      try {
-        result = await call();
-        // A failure needs no rollback: the optimistic value is discarded when
-        // the Server Action's re-render supplies the real cart. All that is
-        // missing is telling the shopper why nothing changed.
-        if (!result.ok) setError(result.error ?? "Something went wrong.");
-      } finally {
-        /*
-         * Settling hands the badge the count the action itself reported. The
-         * delta release commits before the router applies the revalidated
-         * tree, so without that authoritative bridge the badge would fall
-         * back to the stale server count for a frame or two — a visible
-         * 3 → 2 → 3 flicker on every adjustment.
-         */
-        settleBadge(countDelta, result?.ok ? result.totalItems : undefined);
-      }
-    });
+    setPending((m) => new Map(m).set(productId, entry));
+
+    const rollback = () =>
+      setPending((m) => {
+        // Only roll back the entry this op created; a newer op owns it now.
+        if (m.get(productId)?.opId !== opId) return m;
+        const next = new Map(m);
+        next.delete(productId);
+        return next;
+      });
+
+    call()
+      .then((result) => {
+        if (result.ok) {
+          // The overlay stays until the revalidated tree confirms it; the
+          // badge bridges with the authoritative count the action reported.
+          settleBadge(countDelta, result.totalItems);
+        } else {
+          setError(result.error ?? "Something went wrong.");
+          rollback();
+          settleBadge(countDelta);
+        }
+      })
+      .catch(() => {
+        setError("Something went wrong — please try again.");
+        rollback();
+        settleBadge(countDelta);
+      });
   };
 
-  if (lines.length === 0) {
+  if (cart.lines.length === 0) {
     return (
       <div className="flex min-h-[40dvh] flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
         <p className="text-base font-medium">Your cart is empty.</p>
@@ -131,8 +169,11 @@ export function CartContents({ cart }: CartContentsProps) {
   return (
     <div className="flex flex-col gap-8 lg:flex-row lg:items-start">
       <ul className="flex flex-1 flex-col divide-y divide-border rounded-lg border border-border">
-        {lines.map((line) => (
-          <li key={line.productId} className="flex gap-4 p-4">
+        {lines.map(({ line, removing }) => (
+          <li
+            key={line.productId}
+            className={`flex gap-4 p-4 transition-opacity ${removing ? "opacity-50" : ""}`}
+          >
             <Link
               href={`/products/${line.product.slug}`}
               className="relative size-20 shrink-0 overflow-hidden rounded-md border border-border bg-surface sm:size-24"
@@ -160,34 +201,47 @@ export function CartContents({ cart }: CartContentsProps) {
 
               <Price value={line.product.price} className="text-xs text-muted" />
 
-              <div className="mt-1 flex flex-wrap items-center gap-3">
-                <QuantityStepper
-                  id={`qty-${line.productId}`}
-                  label={line.product.name}
-                  value={line.quantity}
-                  onChange={(next) =>
-                    run({ type: "setQuantity", productId: line.productId, quantity: next },
-                      next - line.quantity,
-                      () => updateCartItem(line.productId, next))
-                  }
-                  /*
-                    Stock is not read per line here: it is recomputed upstream on
-                    every request, so any ceiling shown would differ each load.
-                    The server validates the increase instead.
-                  */
-                  max={99}
-                />
-                <button
-                  type="button"
-                  onClick={() =>
-                    run({ type: "remove", productId: line.productId },
-                      -line.quantity,
-                      () => removeCartItem(line.productId))
-                  }
-                  className="text-sm text-muted underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                >
-                  Remove
-                </button>
+              {/* min-h matches the stepper row so the swap to "Removing…" cannot change the row's height. */}
+              <div className="mt-1 flex min-h-9 flex-wrap items-center gap-3">
+                {removing ? (
+                  <span className="flex items-center gap-2 text-sm text-muted" aria-live="polite">
+                    <span
+                      aria-hidden
+                      className="size-4 animate-spin rounded-full border-2 border-current border-t-transparent opacity-70"
+                    />
+                    Removing…
+                  </span>
+                ) : (
+                  <>
+                    <QuantityStepper
+                      id={`qty-${line.productId}`}
+                      label={line.product.name}
+                      value={line.quantity}
+                      onChange={(next) =>
+                        run(line.productId, { type: "setQuantity", quantity: next },
+                          next - line.quantity,
+                          () => updateCartItem(line.productId, next))
+                      }
+                      /*
+                        Stock is not read per line here: it is recomputed upstream on
+                        every request, so any ceiling shown would differ each load.
+                        The server validates the increase instead.
+                      */
+                      max={99}
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        run(line.productId, { type: "remove" },
+                          -line.quantity,
+                          () => removeCartItem(line.productId))
+                      }
+                      className="text-sm text-muted underline transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                    >
+                      Remove
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </li>
