@@ -1,5 +1,5 @@
 import "server-only";
-import { commerce, isNotFound, type Cart } from "@/lib/commerce";
+import { commerce, isNotFound, type Cart, type StockLevel } from "@/lib/commerce";
 import { isFrameworkControlFlow } from "@/lib/framework";
 
 /**
@@ -19,23 +19,42 @@ import { isFrameworkControlFlow } from "@/lib/framework";
 
 export type CartOperationResult =
   | { ok: true; cart: Cart }
-  | { ok: false; error: string };
+  /**
+   * `stock` rides along when the failure was a stock rejection: the guard has
+   * just read the real availability, and the caller's UI may still be showing
+   * an older snapshot ("In stock" beside "out of stock" in the error). Handing
+   * the reading back lets label, ceiling and message agree on one number.
+   *
+   * `cartMissing` marks the one failure that means "this token no longer has a
+   * cart behind it" — the signal a caller needs before minting a replacement.
+   * It must never be inferred from `ok: false` alone: a stock rejection is
+   * also a failure, and treating it as a dead cart replaces the shopper's
+   * live cart with an empty one.
+   */
+  | { ok: false; error: string; stock?: StockLevel; cartMissing?: boolean };
 
 async function guardStock(
   productId: string,
   quantity: number,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true } | { ok: false; error: string; stock: StockLevel }> {
   const stock = await commerce.getStock(productId);
-  if (!stock.inStock) return { ok: false, error: "This item is out of stock." };
+  if (!stock.inStock) return { ok: false, error: "This item is out of stock.", stock };
   if (quantity > stock.quantity) {
-    return { ok: false, error: `Only ${stock.quantity} available.` };
+    return { ok: false, error: `Only ${stock.quantity} available.`, stock };
   }
   return { ok: true };
 }
 
 function toFailure(error: unknown, fallback: string): CartOperationResult {
   if (isFrameworkControlFlow(error)) throw error;
-  if (isNotFound(error)) return { ok: false, error: "That item is no longer available." };
+  // Upstream 404s here after the guard has passed, which leaves two causes:
+  // the product vanished, or the cart token expired. The API's envelope does
+  // not distinguish them, so this reports both facts and the caller decides —
+  // a UI add retries once against a fresh cart (and if the product truly is
+  // gone, that retry fails the same way and the message stands).
+  if (isNotFound(error)) {
+    return { ok: false, error: "That item is no longer available.", cartMissing: true };
+  }
   console.error(fallback, error);
   return { ok: false, error: fallback };
 }
@@ -75,7 +94,9 @@ export async function addItem(
       knownCart !== undefined ? knownCart : commerce.getCart(token),
     ]);
 
-    if (!stock.inStock) return { ok: false, error: "This item is out of stock." };
+    if (!stock.inStock) {
+      return { ok: false, error: "This item is out of stock.", stock };
+    }
 
     const alreadyInCart =
       existingCart?.lines.find((line) => line.productId === productId)?.quantity ?? 0;
@@ -86,7 +107,7 @@ export async function addItem(
       // Three phrasings, because "only 7 more available — your cart already has
       // 0" is the kind of copy that makes a shopper distrust the number.
       if (alreadyInCart === 0) {
-        return { ok: false, error: `Only ${stock.quantity} available.` };
+        return { ok: false, error: `Only ${stock.quantity} available.`, stock };
       }
       return {
         ok: false,
@@ -94,6 +115,7 @@ export async function addItem(
           headroom === 0
             ? `Your cart already has all ${stock.quantity} available.`
             : `Only ${headroom} more available — your cart already has ${alreadyInCart}.`,
+        stock,
       };
     }
 

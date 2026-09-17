@@ -9,7 +9,7 @@ import {
   setQuantity,
   type CartOperationResult,
 } from "@/lib/cart-service";
-import { commerce, type Cart } from "@/lib/commerce";
+import { commerce, type Cart, type StockLevel } from "@/lib/commerce";
 import { CART_COOKIE, readCartToken } from "@/lib/data/cart";
 
 /**
@@ -26,7 +26,8 @@ import { CART_COOKIE, readCartToken } from "@/lib/data/cart";
 
 export type CartActionResult =
   | { ok: true; totalItems: number }
-  | { ok: false; error: string };
+  /** `stock` is the guard's own reading when the failure was stock-related — see CartOperationResult. */
+  | { ok: false; error: string; stock?: StockLevel };
 
 /** 30 days, well beyond the API's 24h inactivity expiry. */
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 30;
@@ -66,7 +67,15 @@ async function withCart(
       updateTag(cacheTags.cart(existing));
       return { ok: true, totalItems: result.cart.totalItems };
     }
-    if (!options.createIfMissing) return { ok: false, error: result.error };
+    /*
+     * Only a dead token justifies the replacement-cart path below. Any other
+     * failure — a stock rejection above all — must surface as-is: falling
+     * through would mint a fresh cart, overwrite the cookie, and silently
+     * discard everything the shopper had in the live one.
+     */
+    if (!result.cartMissing || !options.createIfMissing) {
+      return { ok: false, error: result.error, stock: result.stock };
+    }
   }
 
   if (!options.createIfMissing) {
@@ -78,7 +87,7 @@ async function withCart(
   // Hand the freshly created cart to the operation so it need not re-read it:
   // it is empty by construction, and this API's `GET /cart` costs ~1.7s.
   const result = await operate(created.token, created);
-  if (!result.ok) return { ok: false, error: result.error };
+  if (!result.ok) return { ok: false, error: result.error, stock: result.stock };
   updateTag(cacheTags.cart(created.token));
   return { ok: true, totalItems: result.cart.totalItems };
 }
