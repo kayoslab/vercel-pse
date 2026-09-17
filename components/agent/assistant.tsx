@@ -166,16 +166,16 @@ export function Assistant() {
           <div key={message.id} className="flex flex-col gap-2">
             {message.parts.map((part, index) => {
               if (part.type === "text") {
-                return (
+                return message.role === "user" ? (
                   <p
                     key={index}
-                    className={
-                      message.role === "user"
-                        ? "ml-auto max-w-[85%] rounded-lg bg-accent px-3 py-2 text-sm text-accent-foreground"
-                        : "text-sm leading-relaxed text-foreground"
-                    }
+                    className="ml-auto max-w-[85%] rounded-lg bg-accent px-3 py-2 text-sm text-accent-foreground"
                   >
                     {part.text}
+                  </p>
+                ) : (
+                  <p key={index} className="text-sm leading-relaxed text-foreground">
+                    <InlineFormatted text={part.text} />
                   </p>
                 );
               }
@@ -286,6 +286,41 @@ function extractProducts(output: unknown): ProductSuggestion[] {
       typeof p.price === "string"
     );
   });
+}
+
+/**
+ * Renders the three inline markdown fragments models emit even when the system
+ * prompt forbids markdown: **bold**, *italic* and `code`. Without this they
+ * appear as literal asterisks and backticks, because assistant text is plain
+ * text by design. Deliberately not a markdown library: a chat panel does not
+ * justify the bundle, the prompt keeps output plain, and anything beyond these
+ * three tokens (lists, headings) degrades to readable plain text anyway.
+ */
+function InlineFormatted({ text }: { text: string }) {
+  const nodes: React.ReactNode[] = [];
+  // Bold, code, and italic whose delimiters hug the content ("2 * 3 * 4" stays untouched).
+  const token = /(\*\*[^*\n]+\*\*|`[^`\n]+`|\*(?!\s)[^*\n]+?(?<!\s)\*)/g;
+  let last = 0;
+  let key = 0;
+  for (const match of text.matchAll(token)) {
+    const index = match.index ?? 0;
+    if (index > last) nodes.push(text.slice(last, index));
+    const raw = match[0];
+    if (raw.startsWith("**")) {
+      nodes.push(<strong key={key++}>{raw.slice(2, -2)}</strong>);
+    } else if (raw.startsWith("`")) {
+      nodes.push(
+        <code key={key++} className="rounded bg-surface px-1 font-mono text-[0.85em]">
+          {raw.slice(1, -1)}
+        </code>,
+      );
+    } else {
+      nodes.push(<em key={key++}>{raw.slice(1, -1)}</em>);
+    }
+    last = index + raw.length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return <>{nodes}</>;
 }
 
 function SparkleIcon() {

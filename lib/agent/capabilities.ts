@@ -67,23 +67,58 @@ export const searchProductsSchema = {
     .string()
     .optional()
     .describe("Category slug to narrow to. Call list_categories if unsure."),
+  maxPriceCents: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Only products costing at most this many cents (2500 = $25.00)."),
+  minPriceCents: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe("Only products costing at least this many cents."),
   limit: z.number().int().min(1).max(12).optional().describe("Defaults to 6."),
 };
 
+/**
+ * Price limits are enforced HERE, not left to the model. The UI renders every
+ * product a tool result contains as a card, so a model that fetched unfiltered
+ * results and described only the cheap ones would still show the expensive
+ * cards — the constraint has to live in the data, not the prose. The upstream
+ * API has no price parameter, so a priced search fetches the full match set
+ * (the catalogue is 28 products — one cached read) and filters locally.
+ */
 export async function searchProducts(input: {
   query?: string;
   category?: string;
+  maxPriceCents?: number;
+  minPriceCents?: number;
   limit?: number;
 }) {
+  const limit = input.limit ?? 6;
+  const priced = input.maxPriceCents !== undefined || input.minPriceCents !== undefined;
+
   const page = await listCatalogue({
     query: input.query,
     category: input.category,
-    limit: input.limit ?? 6,
+    limit: priced ? 100 : limit,
   });
+
+  const matches = page.items.filter(
+    (p) =>
+      (input.maxPriceCents === undefined || p.price.amount <= input.maxPriceCents) &&
+      (input.minPriceCents === undefined || p.price.amount >= input.minPriceCents),
+  );
+  const items = matches.slice(0, limit);
+
   return {
-    total: page.pagination.total,
-    returned: page.items.length,
-    products: page.items.map(summarise),
+    // With a price filter the honest total is the post-filter count; the
+    // upstream pagination total would claim matches the shopper can't afford.
+    total: priced ? matches.length : page.pagination.total,
+    returned: items.length,
+    products: items.map(summarise),
   };
 }
 
