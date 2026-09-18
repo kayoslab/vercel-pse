@@ -208,7 +208,20 @@ export async function addToCart(
   input: { productId: string; quantity?: number },
 ): Promise<AddToCartOutcome> {
   const result = await addItem(token, input.productId, input.quantity ?? 1);
-  if (!result.ok) return { added: false, reason: result.error };
+  if (!result.ok) {
+    // A dead cart must not masquerade as a missing product: the generic
+    // NOT_FOUND copy blames the item, and an agent relaying it tells the
+    // shopper something in stock "is no longer available". Name the real
+    // cause and the real fix instead.
+    if (result.cartMissing) {
+      return {
+        added: false,
+        reason:
+          "The shopper's cart session has expired. Ask them to reload the page and try again — a fresh cart will be set up automatically.",
+      };
+    }
+    return { added: false, reason: result.error };
+  }
 
   return {
     added: true,
