@@ -196,7 +196,8 @@ export const addToCartSchema = {
 
 export type AddToCartOutcome =
   | { added: true; itemCount: number; subtotal: string }
-  | { added: false; reason: string };
+  /** `staleCart` marks the one failure whose recovery differs per caller (§cart session strategies). */
+  | { added: false; reason: string; staleCart?: boolean };
 
 /**
  * Adds to the cart, re-checking stock first via the shared cart service — so an
@@ -212,12 +213,14 @@ export async function addToCart(
     // A dead cart must not masquerade as a missing product: the generic
     // NOT_FOUND copy blames the item, and an agent relaying it tells the
     // shopper something in stock "is no longer available". Name the real
-    // cause and the real fix instead.
+    // cause neutrally and flag it — the right *recovery advice* differs per
+    // caller (browser: reload; session-owned: the tool retries itself; MCP:
+    // create_cart again), so callers own that copy.
     if (result.cartMissing) {
       return {
         added: false,
-        reason:
-          "The shopper's cart session has expired. Ask them to reload the page and try again — a fresh cart will be set up automatically.",
+        staleCart: true,
+        reason: "The cart session has expired.",
       };
     }
     return { added: false, reason: result.error };

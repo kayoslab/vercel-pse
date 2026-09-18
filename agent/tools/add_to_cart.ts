@@ -1,30 +1,31 @@
-import { defineWorkflowTool, type WorkflowToolContext } from "eve/tools";
+import { defineTool } from "eve/tools";
 import { z } from "zod";
 import * as capabilities from "@/lib/agent/capabilities";
-import { cartTokenOf, NO_CART_REASON } from "../lib/session";
+import { replaceSessionCart, resolveCart } from "../lib/session-cart";
 
 /**
- * Adding to the cart is the store's one write, and above a threshold it now
- * pauses for the shopper's explicit confirmation — a durable workflow wait,
- * not a UI trick. The confirmation card is rendered by the channel; the run
- * parks without holding compute until it is answered, minutes or days later,
- * and the model sees a single tool result either way.
+ * Adding to the cart is the store's one write, and above a threshold it
+ * pauses for the shopper's explicit sign-off — eve's `approval` policy, which
+ * parks the run durably (seconds or days) and renders natively on every
+ * channel: a confirmation card in the web panel, buttons in Slack.
  *
- * The threshold is value-based: $50 of merchandise is where an accidental or
- * misunderstood add starts to feel like a real mistake, and where an agent
- * writing to a cart should show its work. Below it, the add goes straight
- * through — a confirmation on every $8 pen would train shoppers to click
- * through the one that matters.
+ * The policy is conditional and PRICED: it looks the product up and requires
+ * approval only when the add is worth $50 or more. A confirmation on every
+ * $8 pen would train shoppers to click through the one that matters. The
+ * ordering is deliberate and free: approval gates *intent* before `execute`
+ * runs; the shared stock guard gates *feasibility* inside it — so a shopper
+ * is never asked to bless an add that was going to fail, and stock is still
+ * re-checked at add time, however late the approval arrives.
  *
- * The stock guard is unchanged and still lives in the shared cart service:
- * the confirmation gates *intent*, the guard gates *feasibility*, and both
- * gates run in that order so a shopper is never asked to approve an add that
- * was going to fail anyway. (The guard re-checks at add time regardless —
- * stock randomises per request, and approval can arrive much later.)
+ * This is an ordinary tool, not a workflow, on purpose: the session-owned
+ * cart lives in durable session state, which workflow steps cannot reach
+ * (verified — writes land in a discarded scope). The approval policy gives
+ * the same durable human pause without leaving ordinary context. Long-lived
+ * *promises* (watch_stock) stay workflows; human *sign-off* is policy.
  */
 const APPROVAL_THRESHOLD_CENTS = 5_000;
 
-export default defineWorkflowTool({
+export default defineTool({
   description:
     "Add a product to the shopper's cart. Quantity adds to whatever is " +
     "already there rather than replacing it. Confirm which product they mean " +
@@ -36,50 +37,48 @@ export default defineWorkflowTool({
     start: ({ productId, quantity }) =>
       `Adding ${quantity ?? 1} × ${productId} to your cart`,
   },
+  approval: async ({ toolInput }) => {
+    const productId = (toolInput as { productId?: unknown })?.productId;
+    if (typeof productId !== "string") return "not-applicable";
+    const quantity =
+      typeof (toolInput as { quantity?: unknown })?.quantity === "number"
+        ? ((toolInput as { quantity: number }).quantity)
+        : 1;
+
+    const details = await capabilities.getProductDetails({ idOrSlug: productId });
+    if (!details.found) return "not-applicable"; // execute will report the real error
+    return details.product.priceCents * quantity >= APPROVAL_THRESHOLD_CENTS
+      ? "user-approval"
+      : "not-applicable";
+  },
   async execute({ productId, quantity }, ctx) {
-    "use workflow";
     const requested = quantity ?? 1;
-    const token = cartTokenOf(ctx.session);
-    if (!token) return { added: false as const, reason: NO_CART_REASON };
+    const cart = await resolveCart(ctx);
+    const first = await capabilities.addToCart(cart.token, {
+      productId,
+      quantity: requested,
+    });
 
-    const product = await describeProduct(ctx, productId);
-    if (!product) {
-      return { added: false as const, reason: "That item is no longer available." };
+    /*
+     * A session-owned cart can die like any other (24h upstream idle). The
+     * browser path heals at the cookie seam; here the session heals itself:
+     * mint a replacement, remember it, retry exactly once. Only for
+     * state-sourced tokens — a dead *cookie* cart is the storefront's to
+     * replace, since a token minted here would diverge from the badge.
+     */
+    if (!first.added && first.staleCart && cart.source === "state") {
+      const fresh = await replaceSessionCart();
+      return capabilities.addToCart(fresh, { productId, quantity: requested });
     }
 
-    const totalCents = product.priceCents * requested;
-    if (totalCents >= APPROVAL_THRESHOLD_CENTS) {
-      const answer = await ctx.ask({
-        prompt:
-          `Add ${requested} × ${product.name} to your cart for ${formatCents(totalCents)}?`,
-        display: "confirmation",
-        options: [
-          { id: "approve", label: "Add to cart", style: "primary" },
-          { id: "cancel", label: "Cancel" },
-        ],
-      });
-      if (answer.optionId !== "approve") {
-        return { added: false as const, reason: "The shopper declined the add." };
-      }
+    if (!first.added && first.staleCart && cart.source === "cookie") {
+      return {
+        added: false as const,
+        reason:
+          "The shopper's cart session has expired. Ask them to reload the page and try again — a fresh cart will be set up automatically.",
+      };
     }
 
-    return performAdd(token, productId, requested);
+    return first;
   },
 });
-
-/** Cents → "$50.00" without importing the app's Intl helper into the workflow body. */
-function formatCents(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
-}
-
-async function describeProduct(ctx: WorkflowToolContext, productId: string) {
-  "use step";
-  const details = await capabilities.getProductDetails({ idOrSlug: productId });
-  if (!details.found) return null;
-  return { name: details.product.name, priceCents: details.product.priceCents };
-}
-
-async function performAdd(token: string, productId: string, quantity: number) {
-  "use step";
-  return capabilities.addToCart(token, { productId, quantity });
-}

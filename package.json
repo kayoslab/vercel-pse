@@ -11,6 +11,7 @@
   "dependencies": {
     "@ai-sdk/react": "^4.0.102",
     "@modelcontextprotocol/sdk": "^1.30.0",
+    "@vercel/connect": "^2.2.0",
     "ai": "^7.0.99",
     "eve": "^0.58.1",
     "mcp-handler": "^2.1.1",

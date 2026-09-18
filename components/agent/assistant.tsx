@@ -283,15 +283,23 @@ function MessagePart({
   if (part.type !== "dynamic-tool") return null;
 
   /*
-   * A workflow pausing for the shopper — the add_to_cart confirmation. The
-   * request rides on the tool part; answering resumes the durable run.
+   * A durable pause for the shopper — the add_to_cart approval. The request
+   * rides on the tool part; answering resumes the parked run. The framework
+   * owns the request's generic prompt ("Approve tool call: …"), so for the
+   * add we compose shopper-facing copy from the tool input — the product
+   * card the model just showed sits directly above for full context.
    */
   if (part.state === "approval-requested") {
     const request = part.toolMetadata?.eve?.inputRequest;
     if (!request) return null;
+    const input = part.input as { productId?: string; quantity?: number } | undefined;
+    const prompt =
+      part.toolName === "add_to_cart" && typeof input?.productId === "string"
+        ? `Add ${input.quantity ?? 1} × ${input.productId} to your cart?`
+        : request.prompt;
     return (
       <div className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3">
-        <p className="text-sm text-foreground">{request.prompt}</p>
+        <p className="text-sm text-foreground">{prompt}</p>
         <div className="flex gap-2">
           {request.options?.map((option) => (
             <Button

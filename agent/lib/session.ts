@@ -26,7 +26,3 @@ export function cartTokenOf(session: SessionAuthLike): string | undefined {
   }
   return undefined;
 }
-
-/** The copy shown when the session has no cart — user-visible, so it must read like a sentence. */
-export const NO_CART_REASON =
-  "I could not reach your cart just now. Please try again.";
