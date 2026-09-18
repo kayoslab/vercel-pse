@@ -171,6 +171,8 @@ The zero CLS is engineered, and every technique is visible in the code:
 ```
 app/                    routes; every page is ◐ partial-prerendered
   api/mcp/              MCP server (Streamable HTTP, 10 tools)
+  api/lifestyle/        generated merchandising route — the model runs
+                        once per product, the CDN serves it forever
   products/[param]/     PDP — prerendered per product, stock streams
 agent/                  the eve agent, as files
   instructions.md       the agent's behaviour contract
@@ -204,6 +206,7 @@ lib/
   actions/              Server Actions (cart mutations, session)
   agent/                capabilities.ts — the shared tool layer
   cart-service.ts       cart operations + stock guard, caller-agnostic
+  lifestyle.ts          image-model prompt + generation (Gateway, OIDC)
   cache-tags.ts         the invalidation vocabulary
   money.ts              integer cents end to end; formatting at the edge
 ```
