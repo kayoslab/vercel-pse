@@ -1,6 +1,7 @@
 import { connectSlackCredentials } from "@vercel/connect/eve";
 import { slackChannel } from "eve/channels/slack";
 import * as capabilities from "@/lib/agent/capabilities";
+import { formatMoney, money } from "@/lib/money";
 
 /**
  * The Slack surface of the store agent.
@@ -13,9 +14,9 @@ import * as capabilities from "@/lib/agent/capabilities";
  * add_to_cart" plus the raw input JSON), and a shopper is not a developer.
  * `defaultDeliver` renders whatever the event carries, so the handler hands
  * it a prettified clone: shopper copy composed from a product lookup
- * ("Add 1 × Black Pullover Hoodie ($60.00) to your cart?"), and the action
- * input replaced with `{}` — the renderer's own empty-input path, which
- * cleanly suppresses the JSON block. Response routing rides the requestId,
+ * ("Before I spend your money: add 1 × Black Pullover Hoodie to your cart
+ * for $60.00?"), and the action input replaced with `{}` — the renderer's
+ * own empty-input path, which cleanly suppresses the JSON block. Response routing rides the requestId,
  * not the input, so the buttons keep working. Anything unexpected — an
  * unknown tool, a failed lookup, a shape change — falls through to the
  * default rendering untouched: worst case is ugly, never broken.
@@ -43,7 +44,10 @@ export default slackChannel({
             });
             if (!details.found) return request;
 
-            const total = `$${((details.product.priceCents * quantity) / 100).toFixed(2)}`;
+            const total = formatMoney(
+              money(details.product.priceCents * quantity, details.product.currency),
+              "en-US",
+            );
             return {
               ...request,
               prompt: `Before I spend your money: add ${quantity} × ${details.product.name} to your cart for ${total}?`,

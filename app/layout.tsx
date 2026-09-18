@@ -73,13 +73,15 @@ export default function RootLayout({
         {/*
           Fixed overlay, so it cannot shift any page it sits on.
 
-          The Suspense boundary is required, not stylistic: the AI SDK's client
-          code calls `Math.random()` to generate message ids, and Cache Components
-          rejects non-deterministic values in a Client Component that has no
-          boundary above it — the build fails outright. The boundary scopes the
-          assistant to request time and leaves every page's static shell intact.
-          A null fallback is fine here because this is a floating button, not
-          content in the document flow, so nothing moves when it arrives.
+          The Suspense boundary is required, not stylistic: the assistant is a
+          client island with request-time, non-deterministic state (the durable
+          session cursor restored from sessionStorage, the streaming hook's
+          ids), and Cache Components rejects non-determinism in a Client
+          Component with no boundary above it — the build fails outright. The
+          boundary scopes the assistant to request time and leaves every page's
+          static shell intact. A null fallback is fine here because this is a
+          floating button, not content in the document flow, so nothing moves
+          when it arrives.
         */}
         <Suspense fallback={null}>
           <Assistant />

@@ -13,8 +13,9 @@ import { defineEval } from "eve/evals";
  * contract either way.
  *
  * (The $60 hoodie also crosses the approval threshold, but t.send drives a
- * cheap product below it — approval parking is covered by the Playwright e2e,
- * which can answer the card.)
+ * cheap product below it — approval parking is exercised by browser-level
+ * verification against the panel, which can answer the card; this runner's
+ * sessions cannot.)
  */
 export default defineEval({
   description:

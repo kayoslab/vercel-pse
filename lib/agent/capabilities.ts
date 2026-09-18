@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { addItem, removeItem, setQuantity } from "@/lib/cart-service";
 import { commerce } from "@/lib/commerce";
-import { formatMoney } from "@/lib/money";
+import { formatMoney, money } from "@/lib/money";
 
 /**
  * The store's capabilities as plain functions and schemas.
@@ -59,6 +59,7 @@ function summarise(product: {
     category: product.category,
     price: formatMoney(product.price, "en-US"),
     priceCents: product.price.amount,
+    currency: product.price.currency,
     image: product.images[0],
     description: truncate(product.description),
   };
@@ -100,7 +101,7 @@ export const searchProductsSchema = {
  * results and described only the cheap ones would still show the expensive
  * cards — the constraint has to live in the data, not the prose. The upstream
  * API has no price parameter, so a priced search fetches the full match set
- * (the catalogue is 28 products — one cached read) and filters locally.
+ * (a small catalogue — one bounded read) and filters locally.
  */
 export async function searchProducts(input: {
   query?: string;
@@ -193,13 +194,31 @@ export async function getPromotion() {
 
 // --------------------------------------------------------------------- cart
 
-const EMPTY_CART = { itemCount: 0, subtotal: "$0.00", items: [] as const };
+/**
+ * The store's currency, memoised for the process: it comes from the backend's
+ * own config (the same source the root metadata uses), so an empty cart never
+ * hardcodes a symbol the backend didn't choose. One upstream read per
+ * instance, not per empty-cart view.
+ */
+let currencyPromise: Promise<string> | undefined;
+function storeCurrency(): Promise<string> {
+  currencyPromise ??= commerce.getStoreConfig().then((config) => config.currency);
+  return currencyPromise;
+}
+
+async function emptyCart() {
+  return {
+    itemCount: 0,
+    subtotal: formatMoney(money(0, await storeCurrency()), "en-US"),
+    items: [] as const,
+  };
+}
 
 export async function viewCart(token: string | undefined) {
-  if (!token) return EMPTY_CART;
+  if (!token) return emptyCart();
 
   const cart = await commerce.getCart(token);
-  if (!cart) return EMPTY_CART;
+  if (!cart) return emptyCart();
 
   return {
     itemCount: cart.totalItems,
@@ -317,6 +336,6 @@ export async function createCart() {
   const cart = await commerce.createCart();
   return {
     cartToken: cart.token,
-    note: "Pass this cartToken to view_cart and add_to_cart. It expires after 24h of inactivity.",
+    note: "Pass this cartToken to the cart tools (view_cart, add_to_cart, update_cart_item, remove_from_cart). It expires after a period of inactivity.",
   };
 }

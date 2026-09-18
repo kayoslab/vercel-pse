@@ -9,12 +9,11 @@ import { CART_COOKIE } from "@/lib/data/cart";
 /**
  * Guarantees the visitor has a cart cookie before the assistant needs one.
  *
- * This exists because of a constraint in streaming Route Handlers: response
- * headers are flushed before tool execution begins, so a `cookies().set()` from
- * inside a streamed chat response arrives too late and is silently dropped. An
- * agent that created a cart mid-stream would add items to a cart whose token the
- * browser never received — the shopper would be told it worked and see an empty
- * cart.
+ * This exists because the agent cannot set storefront cookies: it runs as a
+ * separate eve service whose streamed responses cannot write this app's
+ * httpOnly cart cookie. An agent that created a cart mid-conversation would
+ * add items to a cart whose token the browser never received — the shopper
+ * would be told it worked and see an empty cart.
  *
  * A Server Action has no such problem. The assistant calls this when it opens,
  * so by the time any message is sent the session exists and the agent only
@@ -51,15 +50,15 @@ export async function ensureCartSession(): Promise<void> {
 /**
  * Expires the cached cart after the assistant has changed it.
  *
- * The chat route cannot do this itself. `updateTag` is Server-Action-only, and
- * the `revalidateTag` a Route Handler *can* call is stale-while-revalidate — it
- * marks the entry stale and still serves the old value to the next reader. The
- * header badge therefore kept showing the pre-add count while the cart page
- * showed the item, which reads as the agent having lied about what it did.
+ * The agent cannot do this itself: `updateTag` is Server-Action-only, and the
+ * agent's writes happen in a separate service outside this app's cache. Left
+ * uninvalidated, the header badge kept showing the pre-add count while the
+ * cart page showed the item, which reads as the agent having lied about what
+ * it did.
  *
- * Calling this from the client once the stream finishes fixes both halves: a
- * Server Action may expire the entry immediately, and its response re-renders
- * the tree, so the badge updates without a navigation.
+ * Calling this from the client the moment a successful cart write streams in
+ * fixes both halves: a Server Action may expire the entry immediately, and
+ * its response re-renders the tree, so the badge updates without a navigation.
  */
 export async function refreshCartCache(): Promise<void> {
   const token = (await cookies()).get(CART_COOKIE)?.value;

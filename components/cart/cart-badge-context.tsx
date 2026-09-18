@@ -6,18 +6,18 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
  * The pending cart delta, shared between every surface that shows a count.
  *
  * The header badge is a server component fed by the cached per-token cart
- * read; the cart page's lines are optimistic and move instantly. Against an
- * API where mutations take seconds, that split showed two different counts
- * during every adjustment — the page already at the new quantity, the badge
- * still on the old one. Storefronts avoid this with a single client-side cart
- * store that badge and page both read (Next.js Commerce's CartProvider is the
- * canonical example).
+ * read; the cart page's lines carry a pending overlay and move instantly.
+ * Against an API where mutations take seconds, that split showed two
+ * different counts during every adjustment — the page already at the new
+ * quantity, the badge still on the old one. Storefronts avoid this with a
+ * single client-side cart store that badge and page both read (Next.js
+ * Commerce's CartProvider is the canonical example).
  *
  * This is the minimal version of that store: not the cart, only the *pending
  * delta* plus a short-lived override. The server count remains the source of
  * truth and keeps streaming from the cached read; a mutation applies its
  * delta when it starts, and on settling records the count the Server Action
- * itself reported. That report matters: the transition that releases the
+ * itself reported. That report matters: the state update that releases the
  * delta commits a frame or two before the router applies the revalidated
  * tree, and in that gap the badge would fall back to the stale count. The
  * override bridges exactly that gap and clears as soon as the fresh
@@ -29,8 +29,9 @@ type CartBadgeState = {
   delta: number;
   /**
    * Authoritative count reported by the last settled mutation, bridging the
-   * frames between a transition committing and the router applying the
-   * revalidated tree. `null` when the server-rendered count is current.
+   * frames between the settling state update committing and the router
+   * applying the revalidated tree. `null` when the server-rendered count is
+   * current.
    */
   override: number | null;
   /** A mutation started: shift the pending delta. */

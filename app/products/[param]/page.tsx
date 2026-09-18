@@ -9,6 +9,7 @@ import {
 } from "@/components/commerce/purchase-panel";
 import { Container } from "@/components/ui/container";
 import { getAllProductSlugs, getProduct } from "@/lib/data/catalogue";
+import { toDecimalString } from "@/lib/money";
 import { pageMetadata, SITE_URL } from "@/lib/seo";
 
 type PageProps = {
@@ -85,7 +86,7 @@ export default async function ProductPage({ params }: PageProps) {
       "@type": "Offer",
       url: `${SITE_URL}/products/${product.slug}`,
       priceCurrency: product.price.currency,
-      price: (product.price.amount / 100).toFixed(2),
+      price: toDecimalString(product.price),
       itemCondition: "https://schema.org/NewCondition",
     },
   };

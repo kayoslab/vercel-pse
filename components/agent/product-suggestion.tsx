@@ -2,9 +2,11 @@ import Image from "next/image";
 import Link from "next/link";
 
 /**
- * Shape returned by the `searchProducts` / `getProductDetails` tools. Declared
- * here rather than imported from the tool module because that module is
- * server-only — the contract is duplicated deliberately and narrowly.
+ * Shape returned by the `search_products` / `get_product_details` tools.
+ * Declared here rather than imported from the capability layer to keep that
+ * server module (and its commerce-client graph) out of the client bundle —
+ * the contract is duplicated deliberately and narrowly, and the renderer
+ * validates structurally anyway because tool output crosses the wire.
  */
 export type ProductSuggestion = {
   id: string;
@@ -20,8 +22,8 @@ export type ProductSuggestion = {
  *
  * This is what makes the assistant more than a chat log: the model retrieves real
  * catalogue data and the interface renders it as something clickable, priced, and
- * linked to the real product page. The system prompt tells the model not to
- * repeat names and prices in prose precisely because they appear here.
+ * linked to the real product page. The agent's instructions tell the model not
+ * to repeat names and prices in prose precisely because they appear here.
  *
  * Horizontal and compact rather than reusing `ProductCard` — a 320px panel is a
  * different layout problem from a three-column grid, and forcing one component to

@@ -59,7 +59,7 @@ export const promotionSchema = z.object({
   active: z.boolean(),
 });
 
-export const cartItemSchema = z.object({
+const cartItemSchema = z.object({
   productId: z.string(),
   quantity: z.number().int(),
   addedAt: z.string(),
@@ -89,7 +89,7 @@ export const storeConfigSchema = z.object({
   }),
 });
 
-export const paginationSchema = z.object({
+const paginationSchema = z.object({
   page: z.number().int(),
   limit: z.number().int(),
   total: z.number().int(),
@@ -124,10 +124,7 @@ export function successEnvelopeWithMeta<
   return z.object({ success: z.literal(true), data, meta });
 }
 
+// Only the two shapes the adapter converts by hand need names; the rest pass
+// through `z.infer` at their call sites.
 export type WireProduct = z.infer<typeof productSchema>;
-export type WireStock = z.infer<typeof stockSchema>;
-export type WireCategory = z.infer<typeof categorySchema>;
-export type WirePromotion = z.infer<typeof promotionSchema>;
 export type WireCart = z.infer<typeof cartSchema>;
-export type WireStoreConfig = z.infer<typeof storeConfigSchema>;
-export type WirePagination = z.infer<typeof paginationSchema>;

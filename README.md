@@ -26,7 +26,9 @@ SWAG_API_BASE_URL=https://vercel-swag-store-api.vercel.app/api
 SWAG_API_BYPASS_TOKEN=<token>
 ```
 
-Both are **server-only** — every API call happens in a Server Component, Server Action, or Route Handler, so the token never reaches the browser. The in-app assistant authenticates to Vercel AI Gateway via OIDC (`VERCEL_OIDC_TOKEN`, provisioned by `vercel env pull` and refreshed automatically in deployments), so there is no AI provider key anywhere in the project.
+Both are **server-only** — every API call happens in a Server Component, Server Action, or Route Handler, so the token never reaches the browser. The in-app agent authenticates to Vercel AI Gateway via OIDC (`VERCEL_OIDC_TOKEN`, provisioned by `vercel env pull` and refreshed automatically in deployments), so there is no AI provider key anywhere in the project.
+
+Optional: `SLACK_DIGEST_CHANNEL_ID` (a Slack channel id the bot is invited to) enables the daily catalogue-health digest; unset, the schedule is a silent no-op and nothing depends on Slack being installed.
 
 > `pnpm-workspace.yaml` carries an `allowBuilds` map: `sharp` and `unrs-resolver` need their install scripts (native binaries); vgpu's Node-only Dawn prebuilds are explicitly set to `false` because the browser path never needs them. Without the map, `pnpm install` fails.
 
@@ -64,7 +66,7 @@ Moving any of these boundaries has a visible cost. Wrapping the whole PDP in one
 
 ### Read-your-own-writes
 
-Cart mutations call `updateTag('cart:{token}')`, which expires the cached cart *immediately* — the next read blocks for fresh data instead of serving stale-while-revalidate. A shopper who just added an item must never see the old count; anything less reads as the action having failed. The chat route (a Route Handler, where `updateTag` is not available) uses `revalidateTag(tag, 'max')` instead, and the assistant states the new count in its reply so the badge's brief staleness is never user-visible.
+Cart mutations call `updateTag('cart:{token}')`, which expires the cached cart *immediately* — the next read blocks for fresh data instead of serving stale-while-revalidate. A shopper who just added an item must never see the old count; anything less reads as the action having failed. The agent's writes happen in a separate service outside this cache entirely, so the panel closes the loop from the client: the moment a successful cart write streams in, it calls a small Server Action (`refreshCartCache`) whose `updateTag` + re-render moves the badge in the same beat as the agent's claim of success.
 
 The cookie is read *outside* every cached scope and the token passed in as an argument — the documented pattern for combining request data with `'use cache'`, and what makes the cache entry per-session.
 
@@ -75,7 +77,7 @@ The cookie is read *outside* every cached scope and the token passed in as an ar
 The cart is server-side and Redis-backed, owned by the commerce API. The app owns only an anonymous UUID token, held in an **httpOnly, secure, sameSite=lax cookie** — the token is the only credential protecting the cart, so an XSS bug must not be able to read it. The cart is created lazily on first add; visitors who never buy never cost an upstream write.
 
 - **All mutations are Server Actions** (`lib/actions/cart.ts`) — no client fetches, no route handlers.
-- **Quantity and removal are optimistic** (`useOptimistic`): lines and the subtotal live in one optimistic state so they always agree — a quantity that moves instantly while the total lags reads as broken. The header badge joins the same moment through a shared pending-delta context (the pattern behind Next.js Commerce's cart store): the server-streamed count stays the source of truth, and in-flight mutations add their delta to it, so the badge and the page cannot show different counts while a slow mutation runs. Failures need no rollback; the Server Action's re-render supplies the truth, plus a message explaining why nothing changed.
+- **Quantity and removal move instantly through an explicit pending overlay** — deliberately *not* `useOptimistic` + `startTransition`: an awaited Server Action inside a transition entangles with every later navigation, freezing the site for the mutation's whole round trip on slow connections (measured: 83ms → 4,166ms; `cart-contents.tsx` documents the model). Lines and the subtotal derive from one overlay so they always agree; a removing line stays visible, dimmed, with a spinner. An overlay entry clears when the revalidated props *confirm* it — not when the promise resolves — and a failure rolls back only its own entry, with a message explaining why nothing changed. The header badge joins the same moment through a shared pending-delta context (the pattern behind Next.js Commerce's cart store): the server-streamed count stays the source of truth, in-flight mutations add their delta, and a settled mutation bridges the settle gap with the count the action itself reported.
 - **Adding is deliberately *not* optimistic.** Stock randomises per request, so an add genuinely can fail; an "Added!" that revokes itself costs more trust than a second of "Adding…".
 - **The stock guard validates the *resulting* quantity, not the increment.** The upstream POST is additive, and a guard that only checks the increment passes six adds of 10 against a stock of 13. Found by driving the MCP endpoint in a loop; the UI path had the same hole. The guard reads cart and stock in parallel, so correctness costs one round trip, not two.
 - Expired tokens (24h inactivity) are handled transparently: a failed add mints a new cart and retries once; a failed update tells the shopper the cart expired, because there is nothing worth recovering.
@@ -123,7 +125,7 @@ A schedule (`agent/schedules/catalogue-health.ts` → a Vercel Cron) posts a dai
 
 ### The chips are tests
 
-Every suggestion chip in the panel is a commitment — it is the one input a reviewer is guaranteed to try — so each lives in `evals/` as a deterministic regression test (`eve eval`): the under-$25 chip asserts the price constraint travels **in the tool call** (the fix for a real bug where the model fetched unfiltered results and the cards contradicted its prose), the cartless add asserts failure is relayed as data rather than papered over, and two more pin the boundary (payment requests decline without touching tools) and the first rule (unknown products are searched, not guessed at). Five evals, thirteen gates, no judge model — a failure means a broken contract, not a grader's opinion.
+Every suggestion chip in the panel is a commitment — it is the one input a reviewer is guaranteed to try — so the chips anchor a deterministic regression suite in `evals/` (`eve eval --url <deployment>`): the under-$25 chip runs verbatim and asserts the price constraint travels **in the tool call** (the fix for a real bug where the model fetched unfiltered results and the cards contradicted its prose); the add chip runs as a below-threshold variant asserting the stronger cookie-less contract — *an add succeeds via a session-minted cart, or fails only on stock, never on plumbing* (approval parking itself is exercised at the UI level, where the card can be answered); two more pin the boundary (payment requests decline without touching tools) and the first rule (unknown products are searched, not guessed at). Five evals, thirteen gates, no judge model — a failure means a broken contract, not a grader's opinion.
 
 The design has now earned its keep four separate times, each through a different consumer: the MCP loop found the oversell bug, the under-$25 chip found the constraint gap, the scheduled digest found the missing reads by naming its own blind spots, and a Slack shopper found the missing writes. Every fix landed once, in the capability layer, for all consumers simultaneously. The shared layer is not just DRY — each new consumer is a free auditor of all the others.
 
@@ -135,9 +137,9 @@ The agent and MCP endpoints are deliberately unauthenticated (eve fails closed b
 
 The hero's triangle is a plain white SVG in the prerendered shell — and on capable desktops it upgrades itself into a live **WebGPU rendering of the same mark** (LED edge lighting, raycast floor radiance, pointer-tracked glow), using the *Triangle LED Hero* example from [vgpu](https://vgpu.sh), Vercel Labs' WebGPU library, released days before this build.
 
-The integration is strictly additive and gated: `navigator.gpu`, `prefers-reduced-motion: no-preference`, `lg` viewport, and first idle — the 19KB (gzip) renderer chunk is dynamically imported and never enters the critical path. The canvas fades in over the SVG inside the same box (zero layout shift), pauses when hidden or scrolled away, and tears down below `lg`. Every gate failure leaves the SVG exactly as prerendered. Measured with the canvas actively rendering: desktop Lighthouse **100**, TBT **0ms**.
+The integration is strictly additive and gated: `navigator.gpu`, `prefers-reduced-motion: no-preference`, `lg` viewport, and first idle — the renderer (~70KB gzip across its lazily-imported chunks, shaders included) never enters the critical path. The canvas fades in over the SVG inside the same box (zero layout shift), pauses when hidden or scrolled away, and tears down below `lg`. Every gate failure leaves the SVG exactly as prerendered. Measured with the canvas actively rendering: desktop Lighthouse **100**, TBT **0ms**.
 
-The example was pulled through vgpu's tokenless examples API at an immutable revision with every file's SHA-256 verified against its manifest (`components/home/triangle-led/`, local changes named in the file headers). vgpu distributes examples the way this store distributes commerce: documented for agents, exposed over MCP, integrity-verified — the hero is the store's own thesis, rendered.
+The example was pulled through vgpu's tokenless examples API at an immutable revision with every file's SHA-256 verified against its manifest (`components/brand/triangle-led/`, local changes named in the file headers). vgpu distributes examples the way this store distributes commerce: documented for agents, exposed over MCP, integrity-verified — the hero is the store's own thesis, rendered.
 
 ## Performance
 
@@ -161,7 +163,7 @@ The zero CLS is engineered, and every technique is visible in the code:
 
 ```
 app/                    routes; every page is ◐ partial-prerendered
-  api/mcp/              MCP server (Streamable HTTP, 7 tools)
+  api/mcp/              MCP server (Streamable HTTP, 10 tools)
   products/[param]/     PDP — prerendered per product, stock streams
 agent/                  the eve agent, as files
   instructions.md       the agent's behaviour contract
@@ -178,9 +180,9 @@ evals/                  the suggestion chips as deterministic regression
                         tests (eve eval)
 components/
   agent/                assistant panel (useEveAgent), product cards,
-                        the workflow confirmation card
+                        the approval card
   cart/, commerce/      storefront components + their skeleton twins
-  home/triangle-led/    vendored vgpu example (SHA-verified, changes named)
+  brand/triangle-led/   vendored vgpu example (SHA-verified, changes named)
 lib/
   commerce/             the CommerceProvider port (provider.ts) with one
                         adapter (swag-store/): envelope unwrapping, bypass

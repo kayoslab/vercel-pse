@@ -29,7 +29,7 @@ const sessionCart = defineState<{ token: string | null }>(
   () => ({ token: null }),
 );
 
-export type ResolvedCart = { token: string; source: "cookie" | "state" };
+type ResolvedCart = { token: string; source: "cookie" | "state" };
 
 type SessionLike = { session: Parameters<typeof cartTokenOf>[0] };
 

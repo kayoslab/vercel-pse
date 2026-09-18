@@ -60,7 +60,9 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
-      "get_product",
+      // Same name as the in-app agent's tool, deliberately: the thesis is
+      // that every consumer addresses the same capability the same way.
+      "get_product_details",
       {
         title: "Get product details",
         description:
@@ -111,7 +113,8 @@ const handler = createMcpHandler(
         title: "Create a cart",
         description:
           "Create an empty cart and return its token. Call this once, then pass " +
-          "the token to view_cart and add_to_cart. Needed because an MCP client " +
+          "the token to the cart tools (view_cart, add_to_cart, " +
+          "update_cart_item, remove_from_cart). Needed because an MCP client " +
           "has no browser session of its own.",
         inputSchema: {},
       },

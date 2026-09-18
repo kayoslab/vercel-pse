@@ -28,7 +28,7 @@ const BASE =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent " +
   "disabled:cursor-not-allowed disabled:opacity-50";
 
-export type ButtonStyleProps = {
+type ButtonStyleProps = {
   variant?: Variant;
   size?: Size;
   className?: string;

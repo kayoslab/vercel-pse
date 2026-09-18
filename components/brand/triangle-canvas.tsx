@@ -20,7 +20,8 @@ import { useEffect, useRef, useState } from "react";
  * - `prefers-reduced-motion: no-preference` — this is continuous animation.
  * - `lg` viewport — on phones the mark renders small, too small to justify
  *   a render loop on battery; the static SVG is the better citizen there.
- * - First idle after hydration — the ~60KB renderer chunk is dynamically
+ * - First idle after hydration — the renderer (~70KB gzip across its lazy
+ *   chunks, shaders included) is dynamically
  *   imported and never enters the critical path.
  *
  * While running, the loop pauses when the tab is hidden or the mark scrolls

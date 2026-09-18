@@ -20,11 +20,14 @@ export function multiply(value: Money, factor: number): Money {
   return { amount: value.amount * factor, currency: value.currency };
 }
 
-export function addMoney(a: Money, b: Money): Money {
-  if (a.currency !== b.currency) {
-    throw new Error(`Cannot add ${a.currency} to ${b.currency}`);
-  }
-  return { amount: a.amount + b.amount, currency: a.currency };
+/**
+ * Minor units → a plain decimal string ("3000" → "30.00"), for machine-facing
+ * formats that carry the currency in a separate field (schema.org offers,
+ * feeds). Human-facing rendering goes through `formatMoney` instead — this
+ * exists so no consumer hand-rolls `amount / 100` for the machine case.
+ */
+export function toDecimalString(value: Money): string {
+  return (value.amount / 100).toFixed(2);
 }
 
 /**

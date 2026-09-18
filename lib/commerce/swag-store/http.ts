@@ -48,7 +48,7 @@ const MAX_ATTEMPTS = 3;
 const RETRY_BASE_DELAY_MS = 120;
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 
-export type RequestOptions<TSchema extends z.ZodTypeAny> = {
+type RequestOptions<TSchema extends z.ZodTypeAny> = {
   /** Path relative to the API base, e.g. `/products`. */
   path: string;
   /** Schema for the whole envelope — validated before anything is returned. */
@@ -58,14 +58,6 @@ export type RequestOptions<TSchema extends z.ZodTypeAny> = {
   body?: unknown;
   /** Cart token, sent as `x-cart-token` when present. */
   cartToken?: string;
-  /**
-   * Passed through to `fetch`. Deliberately not defaulted: under Cache
-   * Components an uncached fetch is dynamic, and callers opt into caching by
-   * wrapping in `use cache` rather than by configuring the transport.
-   */
-  init?: Pick<RequestInit, "cache" | "signal"> & {
-    next?: { revalidate?: number | false; tags?: string[] };
-  };
 };
 
 export async function request<TSchema extends z.ZodTypeAny>(
@@ -101,8 +93,7 @@ export async function request<TSchema extends z.ZodTypeAny>(
         method,
         headers,
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
-        ...options.init,
-        signal: withDeadline(options.init?.signal),
+        signal: withDeadline(),
       });
     } catch (cause) {
       // A cancellation is not a failure and must not be retried: Next.js
@@ -171,13 +162,9 @@ function toCommerceError(
   });
 }
 
-/**
- * Combines the caller's abort signal (if any) with our own deadline, so a
- * request is cancelled by whichever fires first.
- */
-function withDeadline(callerSignal?: AbortSignal | null): AbortSignal {
-  const deadline = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
-  return callerSignal ? AbortSignal.any([callerSignal, deadline]) : deadline;
+/** Every request gets the same hard deadline; there are no caller overrides. */
+function withDeadline(): AbortSignal {
+  return AbortSignal.timeout(REQUEST_TIMEOUT_MS);
 }
 
 /**

@@ -18,7 +18,7 @@ const schema = z.object({
   SWAG_API_BYPASS_TOKEN: z.string().min(1),
 });
 
-export type Env = z.infer<typeof schema>;
+type Env = z.infer<typeof schema>;
 
 let cached: Env | undefined;
 

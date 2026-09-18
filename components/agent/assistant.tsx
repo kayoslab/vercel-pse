@@ -84,8 +84,9 @@ export function Assistant() {
    * it sees the tool result, so the badge must move at that same moment. The
    * Server Action matters (vs a bare router.refresh) because only it may call
    * `updateTag` to expire the cached cart immediately. Works for straight
-   * adds and for approval-gated ones alike: the approved add's part reaches
-   * `output-available` only when the workflow actually wrote to the cart.
+   * adds and for approval-gated ones alike: an approved add's part reaches
+   * `output-available` only after the approval let `execute` run and the
+   * cart write actually finished.
    */
   const refreshedAdds = useRef(new Set<string>());
   useEffect(() => {

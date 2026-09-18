@@ -12,8 +12,11 @@ import { isFrameworkControlFlow } from "@/lib/framework";
  * `quantity: 9999`.
  *
  * Cache invalidation is deliberately *not* done here. `updateTag` may only be
- * called from a Server Action, while a Route Handler must use `revalidateTag`,
- * so the caller owns that decision and this stays callable from both.
+ * called from a Server Action, and two of the three entry points (the eve
+ * agent's tools, the MCP server) run outside this app's Server Action context
+ * entirely — their invalidation happens from the client, via the
+ * refreshCartCache Server Action. The caller owns that decision, and this
+ * stays callable from all three.
  */
 
 export type CartOperationResult =

@@ -2,7 +2,7 @@ import "server-only";
 import { cacheLife, cacheTag } from "next/cache";
 import { cacheTags } from "@/lib/cache-tags";
 import { commerce } from "@/lib/commerce";
-import type { Category, Page, Product } from "@/lib/commerce";
+import type { Page, Product } from "@/lib/commerce";
 
 /**
  * Cached catalogue reads.
@@ -43,16 +43,6 @@ export async function getProduct(idOrSlug: string): Promise<Product | null> {
   cacheTag(cacheTags.products, cacheTags.product(idOrSlug));
 
   return commerce.getProduct(idOrSlug);
-}
-
-export async function getCategories(): Promise<readonly Category[]> {
-  "use cache";
-  // Categories are effectively structural — they change when the merchandising
-  // team restructures the store, not during a normal trading day.
-  cacheLife("days");
-  cacheTag(cacheTags.categories);
-
-  return commerce.listCategories();
 }
 
 export type CatalogueQuery = {

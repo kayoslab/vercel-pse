@@ -4,6 +4,7 @@ import { CartContents } from "@/components/cart/cart-contents";
 import { Container } from "@/components/ui/container";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getCurrentCart } from "@/lib/data/cart";
+import { getStoreConfig } from "@/lib/data/store";
 import { pageMetadata } from "@/lib/seo";
 
 const TITLE = "Your Cart";
@@ -51,15 +52,18 @@ async function Contents() {
   const cart = await getCurrentCart();
 
   // No cookie, or a cart the API has already expired. Both mean "empty" to the
-  // shopper, and neither is an error worth showing them.
+  // shopper, and neither is an error worth showing them. The zero subtotal
+  // borrows its currency from the store's own config (a cached read) rather
+  // than hardcoding one the backend didn't choose.
   if (!cart) {
+    const { currency } = await getStoreConfig();
     return (
       <CartContents
         cart={{
           token: "",
           lines: [],
           totalItems: 0,
-          subtotal: { amount: 0, currency: "USD" },
+          subtotal: { amount: 0, currency },
           createdAt: "",
           updatedAt: "",
         }}
