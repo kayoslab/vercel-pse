@@ -14,7 +14,7 @@ export default defineEval({
     await t.send("What mugs do you have?");
     t.succeeded();
     t.calledTool("search_products", {
-      output: { returned: (n: number) => n >= 1 },
+      output: { returned: (n: unknown) => typeof n === "number" && n >= 1 },
     });
     t.noFailedActions();
   },

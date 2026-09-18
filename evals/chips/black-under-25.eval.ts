@@ -16,11 +16,18 @@ export default defineEval({
     t.succeeded();
     t.calledTool("search_products", {
       input: {
-        maxPriceCents: (v: number) => typeof v === "number" && v <= 2500,
+        maxPriceCents: (v: unknown) => typeof v === "number" && v <= 2500,
       },
       output: {
-        products: (items: Array<{ priceCents: number }>) =>
-          Array.isArray(items) && items.every((p) => p.priceCents <= 2500),
+        products: (items: unknown) =>
+          Array.isArray(items) &&
+          items.every(
+            (p) =>
+              typeof p === "object" &&
+              p !== null &&
+              typeof (p as { priceCents?: unknown }).priceCents === "number" &&
+              (p as { priceCents: number }).priceCents <= 2500,
+          ),
       },
     });
   },
