@@ -1,7 +1,6 @@
 "use client";
 
-import { DefaultChatTransport } from "ai";
-import { useChat } from "@ai-sdk/react";
+import { useEveAgent, type EveMessagePart } from "eve/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -11,14 +10,15 @@ import {
 import { Button } from "@/components/ui/button";
 import { ensureCartSession, refreshCartCache } from "@/lib/actions/session";
 
-/** Human-readable progress for each tool, so "thinking" is never opaque. */
+/** Human-readable progress per tool, so "thinking" is never opaque. */
 const TOOL_LABELS: Record<string, string> = {
-  "tool-searchProducts": "Searching the catalogue",
-  "tool-getProductDetails": "Looking up the product",
-  "tool-checkStock": "Checking stock",
-  "tool-listCategories": "Listing categories",
-  "tool-viewCart": "Reading your cart",
-  "tool-addToCart": "Adding to your cart",
+  search_products: "Searching the catalogue",
+  get_product_details: "Looking up the product",
+  check_stock: "Checking stock",
+  list_categories: "Listing categories",
+  view_cart: "Reading your cart",
+  add_to_cart: "Adding to your cart",
+  watch_stock: "Setting up a stock watch",
 };
 
 const SUGGESTIONS = [
@@ -27,55 +27,87 @@ const SUGGESTIONS = [
   "Add a hoodie to my cart",
 ];
 
+/** Where the durable session cursor survives page reloads. */
+const SESSION_STORAGE_KEY = "assistant-eve-session";
+
+function storedSession(): { sessionId: string; streamIndex: number } | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The store assistant, as a client of the eve agent mounted at /eve/v1.
+ *
+ * The visible UI is unchanged from the AI SDK version — same panel, same
+ * product cards, same badge behaviour. What changed underneath is durability:
+ * the session lives on the server, so a reload replays the transcript and
+ * re-attaches to an in-flight reply (`resume`), and a background stock watch
+ * started in this conversation reports back into it even if the panel was
+ * closed in between. The session cursor is the only client-held state, kept in
+ * sessionStorage so it scopes to the tab like the rest of the browsing session.
+ */
 export function Assistant() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const sessionPromise = useRef<Promise<void> | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [initialSession] = useState(storedSession);
 
   const router = useRouter();
 
-  const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({ api: "/api/chat" }),
-    /*
-     * Refresh the server tree when the agent actually changed the cart.
-     *
-     * A chat response is a plain fetch, not a navigation or a Server Action, so
-     * nothing re-renders the header when it completes — the badge would keep
-     * showing the pre-add count while the cart page showed the item, which reads
-     * as the agent having lied. Only refreshing on a successful add avoids
-     * re-requesting the tree after every search.
-     */
+  const agent = useEveAgent({
+    ...(initialSession ? { initialSession, resume: true } : {}),
+    onSessionChange: (session) => {
+      try {
+        window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+      } catch {
+        // Storage being unavailable only costs resume-on-reload.
+      }
+    },
   });
 
+  const messages = agent.data.messages;
+  const busy = agent.status === "submitted" || agent.status === "streaming";
+  const resuming = agent.status === "resuming";
+
   /*
-   * Refresh the badge the moment a successful addToCart tool result streams
-   * in — not in onFinish, which waits for the model to finish writing its
-   * whole reply. The model's text says "added" right after it sees the tool
-   * result, so the badge must move at the same point or the two disagree for
-   * as long as the model keeps typing. Each tool call refreshes exactly once,
-   * keyed by toolCallId.
+   * Refresh the header badge the moment a successful add streams in — the
+   * same contract as before eve: the agent's text claims success as soon as
+   * it sees the tool result, so the badge must move at that same moment. The
+   * Server Action matters (vs a bare router.refresh) because only it may call
+   * `updateTag` to expire the cached cart immediately. Works for straight
+   * adds and for approval-gated ones alike: the approved add's part reaches
+   * `output-available` only when the workflow actually wrote to the cart.
    */
   const refreshedAdds = useRef(new Set<string>());
   useEffect(() => {
-    for (const id of successfulAddIds(messages.at(-1))) {
-      if (refreshedAdds.current.has(id)) continue;
-      refreshedAdds.current.add(id);
-      // A Server Action, not just router.refresh(): only a Server Action can
-      // call `updateTag` to expire the cached cart immediately, and its
-      // response re-renders the header in the same round trip.
-      void refreshCartCache().then(() => router.refresh());
+    for (const message of messages) {
+      for (const part of message.parts) {
+        if (part.type !== "dynamic-tool" || part.toolName !== "add_to_cart") continue;
+        if (part.state !== "output-available") continue;
+        const added = Boolean(
+          part.output &&
+            typeof part.output === "object" &&
+            (part.output as { added?: unknown }).added === true,
+        );
+        if (!added || refreshedAdds.current.has(part.toolCallId)) continue;
+        refreshedAdds.current.add(part.toolCallId);
+        void refreshCartCache().then(() => router.refresh());
+      }
     }
   }, [messages, router]);
 
-  const busy = status === "submitted" || status === "streaming";
-
   /*
-   * Provision the cart session as soon as the panel opens, not when the first
-   * add happens. A streamed route handler cannot set a cookie — headers are
-   * already sent by the time a tool runs — so the session has to exist up front.
-   * Doing it on open means the ~3s cart creation overlaps the shopper typing,
-   * and visitors who never open the assistant never trigger it.
+   * Provision the cart before the agent can need it: a streamed agent route
+   * cannot set a storefront cookie, so the Server Action creates the cart and
+   * cookie when the panel opens — the ~2.5s creation overlaps the shopper
+   * typing — and `submit` awaits it so a fast first message cannot outrun it.
+   * The channel lifts the cookie into the eve session on every turn.
    */
   useEffect(() => {
     if (!open || sessionPromise.current) return;
@@ -88,19 +120,21 @@ export function Assistant() {
 
   const submit = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || busy) return;
+    if (!trimmed || busy || resuming) return;
     setInput("");
-
-    /*
-     * Await the session before sending. Kicking it off on open is not enough on
-     * its own — cart creation takes ~3s against this API, and a shopper who types
-     * fast beats it. The agent then found no session and told them their cart was
-     * unreachable, which looked like a broken feature rather than a race.
-     */
     sessionPromise.current ??= ensureCartSession();
     await sessionPromise.current;
+    void agent.send(trimmed);
+  };
 
-    void sendMessage({ text: trimmed });
+  const startNewChat = () => {
+    try {
+      window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch {
+      /* see above */
+    }
+    refreshedAdds.current.clear();
+    agent.reset();
   };
 
   if (!open) {
@@ -131,21 +165,33 @@ export function Assistant() {
           <SparkleIcon />
           <h2 className="text-sm font-semibold">Store assistant</h2>
         </div>
-        <button
-          type="button"
-          onClick={() => setOpen(false)}
-          aria-label="Close assistant"
-          className="rounded-md px-2 py-1 text-sm text-muted hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-        >
-          Close
-        </button>
+        <div className="flex items-center gap-1">
+          {messages.length > 0 && (
+            <button
+              type="button"
+              onClick={startNewChat}
+              className="rounded-md px-2 py-1 text-sm text-muted hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              New chat
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close assistant"
+            className="rounded-md px-2 py-1 text-sm text-muted hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          >
+            Close
+          </button>
+        </div>
       </header>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
-        {messages.length === 0 && (
+        {messages.length === 0 && !resuming && (
           <div className="flex flex-col gap-3">
             <p className="text-sm text-muted">
-              I can search the catalogue, check stock and add things to your cart.
+              I can search the catalogue, check stock, watch restocks and add
+              things to your cart.
             </p>
             <div className="flex flex-col gap-2">
               {SUGGESTIONS.map((s) => (
@@ -162,53 +208,24 @@ export function Assistant() {
           </div>
         )}
 
+        {resuming && messages.length === 0 && (
+          <p className="text-sm text-muted">Restoring your conversation…</p>
+        )}
+
         {messages.map((message) => (
           <div key={message.id} className="flex flex-col gap-2">
-            {message.parts.map((part, index) => {
-              if (part.type === "text") {
-                return message.role === "user" ? (
-                  <p
-                    key={index}
-                    className="ml-auto max-w-[85%] rounded-lg bg-accent px-3 py-2 text-sm text-accent-foreground"
-                  >
-                    {part.text}
-                  </p>
-                ) : (
-                  <p key={index} className="text-sm leading-relaxed text-foreground">
-                    <InlineFormatted text={part.text} />
-                  </p>
-                );
-              }
-
-              if (!part.type.startsWith("tool-")) return null;
-
-              // Tool parts carry a `state` and, once resolved, an `output`.
-              const toolPart = part as { type: string; state?: string; output?: unknown };
-              const label = TOOL_LABELS[toolPart.type] ?? "Working";
-
-              if (toolPart.state !== "output-available") {
-                return (
-                  <p key={index} className="text-xs text-muted" aria-live="polite">
-                    {label}…
-                  </p>
-                );
-              }
-
-              const products = extractProducts(toolPart.output);
-              if (products.length === 0) return null;
-
-              return (
-                <div key={index} className="flex flex-col gap-2">
-                  {products.map((product) => (
-                    <ProductSuggestionCard key={product.id} product={product} />
-                  ))}
-                </div>
-              );
-            })}
+            {message.parts.map((part, index) => (
+              <MessagePart
+                key={index}
+                part={part}
+                role={message.role}
+                respond={agent.respond}
+              />
+            ))}
           </div>
         ))}
 
-        {error && (
+        {agent.error && (
           <p className="text-sm text-red-600 dark:text-red-400">
             Something went wrong. Please try again.
           </p>
@@ -231,9 +248,10 @@ export function Assistant() {
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about products…"
           autoComplete="off"
-          className="h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm outline-none placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          disabled={resuming}
+          className="h-10 min-w-0 flex-1 rounded-md border border-border bg-background px-3 text-sm outline-none placeholder:text-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:opacity-60"
         />
-        <Button type="submit" disabled={busy || !input.trim()} className="shrink-0">
+        <Button type="submit" disabled={busy || resuming || !input.trim()} className="shrink-0">
           Send
         </Button>
       </form>
@@ -241,24 +259,76 @@ export function Assistant() {
   );
 }
 
-/**
- * Tool-call ids of addToCart calls in this message that actually succeeded.
- * The model reporting success in prose is not evidence — the tool output is.
- */
-function successfulAddIds(
-  message: { role: string; parts: Array<{ type: string }> } | undefined,
-): string[] {
-  if (!message || message.role !== "assistant") return [];
-  const ids: string[] = [];
-  for (const part of message.parts) {
-    if (part.type !== "tool-addToCart") continue;
-    const { output, toolCallId } = part as { output?: unknown; toolCallId?: string };
-    const added = Boolean(
-      output && typeof output === "object" && (output as { added?: unknown }).added === true,
+function MessagePart({
+  part,
+  role,
+  respond,
+}: {
+  part: EveMessagePart;
+  role: string;
+  respond: (responses: Array<{ requestId: string; optionId?: string; text?: string }>) => Promise<void>;
+}) {
+  if (part.type === "text") {
+    return role === "user" ? (
+      <p className="ml-auto max-w-[85%] rounded-lg bg-accent px-3 py-2 text-sm text-accent-foreground">
+        {part.text}
+      </p>
+    ) : (
+      <p className="text-sm leading-relaxed text-foreground">
+        <InlineFormatted text={part.text} />
+      </p>
     );
-    if (added && toolCallId) ids.push(toolCallId);
   }
-  return ids;
+
+  if (part.type !== "dynamic-tool") return null;
+
+  /*
+   * A workflow pausing for the shopper — the add_to_cart confirmation. The
+   * request rides on the tool part; answering resumes the durable run.
+   */
+  if (part.state === "approval-requested") {
+    const request = part.toolMetadata?.eve?.inputRequest;
+    if (!request) return null;
+    return (
+      <div className="flex flex-col gap-2 rounded-lg border border-border bg-background p-3">
+        <p className="text-sm text-foreground">{request.prompt}</p>
+        <div className="flex gap-2">
+          {request.options?.map((option) => (
+            <Button
+              key={option.id}
+              type="button"
+              variant={option.style === "primary" ? "primary" : "secondary"}
+              onClick={() =>
+                void respond([{ requestId: request.requestId, optionId: option.id }])
+              }
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (part.state !== "output-available") {
+    const label = TOOL_LABELS[part.toolName] ?? "Working";
+    return (
+      <p className="text-xs text-muted" aria-live="polite">
+        {label}…
+      </p>
+    );
+  }
+
+  const products = extractProducts(part.output);
+  if (products.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-2">
+      {products.map((product) => (
+        <ProductSuggestionCard key={product.id} product={product} />
+      ))}
+    </div>
+  );
 }
 
 /**
