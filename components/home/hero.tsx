@@ -22,6 +22,16 @@ export function Hero() {
       <Container size="wide">
         <div className="grid items-center gap-10 py-16 sm:py-24 lg:grid-cols-2 lg:gap-16">
           <div className="flex flex-col items-start gap-6">
+            {/*
+              The brief names a visual element as part of the hero, so it is
+              present at every viewport — but its composition changes with the
+              space. Below `lg` the mark is a compact lockup above the
+              headline: the earlier layout put it full-size under the CTA,
+              where it stretched the hero to most of a phone screen for a
+              shape floating in dead space. The lockup variant hugs the glyph
+              so it sits flush with the text's left edge.
+            */}
+            <TriangleMark variant="lockup" className="w-14 lg:hidden" />
             <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl lg:text-6xl">
               Gear worth shipping.
             </h1>
@@ -34,13 +44,11 @@ export function Hero() {
           </div>
 
           {/*
-            The brief names a visual element as part of the hero, so it is
-            present at every viewport — scaled down on small screens rather
-            than hidden. The mark itself (SVG fallback + the gated vgpu
-            enhancement) lives in components/brand/triangle-mark.tsx, shared
-            with the 404 and error pages.
+            The full mark — SVG fallback plus the gated vgpu enhancement
+            (components/brand/triangle-mark.tsx, shared with the 404 and
+            error pages) — only where the two-column layout gives it a home.
           */}
-          <TriangleMark className="mx-auto w-44 sm:w-60 lg:mx-0 lg:w-full" />
+          <TriangleMark className="hidden lg:block lg:w-full" />
         </div>
       </Container>
     </section>
