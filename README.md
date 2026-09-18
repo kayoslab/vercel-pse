@@ -95,20 +95,35 @@ Details that took iteration:
 **One typed capability layer, consumed three ways.** `lib/agent/capabilities.ts` holds the store's operations as plain functions with zod schemas — search, product details, live stock, categories, cart read/write. Three consumers:
 
 1. **The human UI** — Server Components and Server Actions calling the same underlying data layer.
-2. **The in-app assistant** (`/api/chat`, AI SDK v6 + Claude via Vercel AI Gateway) — wraps the capabilities as streaming tools; retrieved products render as clickable cards in the conversation, and a successful add refreshes the router so the header badge agrees with what the assistant just said.
+2. **The in-app agent** — built on [eve](https://eve.dev), Vercel's framework for durable agents. The agent is a directory (`agent/`): instructions, tools, channel auth, each a file. `withEve()` in `next.config.ts` mounts it at `/eve/v1/*` — one dev command, one Vercel project, the agent running as its own service beside the app.
 3. **The MCP server** (`/api/mcp`, Streamable HTTP) — registers the same functions for any external agent. Connect from Claude Code:
 
    ```bash
    claude mcp add --transport http swag-store https://vercel-swag-store-lac.vercel.app/api/mcp
    ```
 
-What differs between consumers is only the **session**: the browser has an httpOnly cookie; an MCP client has no cookies, so it calls `create_cart` once and carries the token explicitly. That difference is isolated in an injected `CartSession`, and the capability functions never know which caller they serve.
+What differs between consumers is only the **session**. An MCP client has no cookies, so it calls `create_cart` once and carries the token explicitly. The browser's cart lives in an httpOnly cookie that client JavaScript can never read — so it crosses into the agent service at the one seam where a server sees the request: the eve channel's auth walk lifts it into the session's auth attributes, and tools read it from there. The capability functions never know which caller they serve.
 
-The design earned its keep concretely: driving the MCP endpoint in a loop surfaced the oversell bug described above — once, in one place, fixed for all three consumers simultaneously. That is the argument for the shared layer in one sentence.
+### What eve adds that a chat route couldn't
 
-The endpoint is deliberately unauthenticated: everything readable is already public on the storefront, cart writes require possession of an unguessable token, and a bearer requirement would make the server undemonstrable. A production store would put brokered identity in front of it (`withMcpAuth` / Vercel Connect) so carts belong to authenticated shoppers and per-client rate limits exist — the same applies to `/api/chat`, where a WAF rate-limit rule is the right first step.
+The previous iteration of this assistant was a standalone AI SDK route — same capability layer, same cards — and its limits were structural, not cosmetic. A request/response chat holds the conversation in browser memory and cannot outlive its connection. The eve agent's sessions are **durable**: reload mid-answer and the transcript replays and the in-flight reply keeps streaming (`useEveAgent` with `resume`).
 
-*Considered and not built:* natural-language → structured search filters feeding `/search` (the same zod schemas that type the tools could type a `generateObject` parser). Left out to keep the layer's surface exactly as large as what is demonstrably consumed.
+Durability makes two commerce behaviours possible that a chat route cannot express:
+
+- **`watch_stock`** — this API randomises stock per request and genuinely hits zero, so "tell me when it's back" is a real request the storefront could never answer. The tool is a background **workflow**: it returns a task receipt immediately, then alternates a stock check with a durable sleep that holds no compute. Close the panel, navigate away — the run persists, and when stock appears, the completed task wakes the agent, which reports back into the same conversation.
+- **Approval-gated writes** — `add_to_cart` above $50 pauses on a confirmation card (`ctx.ask`) and parks, without compute, until the shopper answers — minutes or days later. The confirmation gates *intent*; the shared stock guard still gates *feasibility* at add time, in that order. Agents that write to carts showing their work before larger writes is the enterprise shape of agentic commerce.
+
+The model is configured as an AI Gateway slug (`anthropic/claude-opus-5`), so the ops story is unchanged: **no AI provider API key exists anywhere in this project** — Gateway auth is Vercel OIDC, provisioned and rotated by the platform.
+
+### The chips are tests
+
+Every suggestion chip in the panel is a commitment — it is the one input a reviewer is guaranteed to try — so each lives in `evals/` as a deterministic regression test (`eve eval`): the under-$25 chip asserts the price constraint travels **in the tool call** (the fix for a real bug where the model fetched unfiltered results and the cards contradicted its prose), the cartless add asserts failure is relayed as data rather than papered over, and two more pin the boundary (payment requests decline without touching tools) and the first rule (unknown products are searched, not guessed at). Five evals, thirteen gates, no judge model — a failure means a broken contract, not a grader's opinion.
+
+The design earned its keep concretely, twice: driving the MCP endpoint in a loop surfaced the oversell bug described above, and the under-$25 bug was fixed once in the capability layer for every consumer simultaneously. That is the argument for the shared layer in two sentences.
+
+The agent and MCP endpoints are deliberately unauthenticated (eve fails closed by default; admitting anonymous shoppers is an explicit, documented opt-in in the channel's auth walk): everything readable is already public on the storefront, cart writes require possession of an unguessable token, and a bearer requirement would make both undemonstrable. A production store would put brokered identity in front (`withMcpAuth` / Vercel Connect) so carts belong to authenticated shoppers and per-client rate limits exist.
+
+*Considered and not built:* natural-language → structured search filters feeding `/search` (the same zod schemas that type the tools could type a `generateObject` parser); Slack as a second eve channel; scheduled agent digests. Left out to keep the layer's surface exactly as large as what is demonstrably consumed.
 
 ## The hero
 
@@ -140,11 +155,19 @@ The zero CLS is engineered, and every technique is visible in the code:
 
 ```
 app/                    routes; every page is ◐ partial-prerendered
-  api/chat/             assistant route handler (AI SDK, streaming, tools)
   api/mcp/              MCP server (Streamable HTTP, 7 tools)
   products/[param]/     PDP — prerendered per product, stock streams
+agent/                  the eve agent, as files
+  instructions.md       the agent's behaviour contract
+  agent.ts              model config (an AI Gateway slug — no API key)
+  channels/eve.ts       route auth; lifts the cart cookie into the session
+  tools/                thin wrappers over the capability layer; add_to_cart
+                        and watch_stock are durable workflow tools
+evals/                  the suggestion chips as deterministic regression
+                        tests (eve eval)
 components/
-  agent/                assistant UI, product cards as generative UI
+  agent/                assistant panel (useEveAgent), product cards,
+                        the workflow confirmation card
   cart/, commerce/      storefront components + their skeleton twins
   home/triangle-led/    vendored vgpu example (SHA-verified, changes named)
 lib/
@@ -153,10 +176,13 @@ lib/
                         header, error mapping, zod-validated responses.
                         Nothing in app/ imports a vendor module — pointing
                         this storefront at another backend means writing a
-                        second adapter, not touching the UI
+                        second adapter, not touching the UI.
+                        Runtime-neutral: the agent service imports this
+                        chain too, so the server-only guard lives in the
+                        Next-facing layers above it
   data/                 cached read layer ('use cache' + tags live here)
   actions/              Server Actions (cart mutations, session)
-  agent/                capabilities.ts (the shared tool layer) + wrappers
+  agent/                capabilities.ts — the shared tool layer
   cart-service.ts       cart operations + stock guard, caller-agnostic
   cache-tags.ts         the invalidation vocabulary
   money.ts              integer cents end to end; formatting at the edge
