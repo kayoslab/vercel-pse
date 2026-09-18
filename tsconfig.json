@@ -11,6 +11,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    "types": ["node", "react", "react-dom", "@webgpu/types", "eve/workflow-modules"],
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [

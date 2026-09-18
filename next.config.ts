@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withEve } from "eve/next";
 
 const nextConfig: NextConfig = {
   env: {
@@ -39,4 +40,10 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+/*
+ * withEve mounts the store agent (the `agent/` directory) at /eve/v1/* —
+ * one dev command, one Vercel project, with the agent running as its own
+ * service beside the Next.js app. The storefront's rendering model is
+ * untouched: the agent is additive routing, not a rendering change.
+ */
+export default withEve(nextConfig);
