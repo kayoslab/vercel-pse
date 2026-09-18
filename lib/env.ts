@@ -1,12 +1,14 @@
-import "server-only";
 import { z } from "zod";
 
 /**
- * Server-only environment access.
+ * Server-side environment access.
  *
- * The `server-only` import is a build-time guard: if any of this is ever
- * imported from a Client Component, the build fails rather than silently
- * shipping the API credentials to the browser.
+ * Runtime-neutral by design: this module is consumed by the Next.js app AND
+ * the eve agent service, and the `server-only` marker throws outside a React
+ * Server Components bundle. The build-time guard against client imports
+ * therefore lives one layer up, in the Next-facing entry points (`lib/data/*`,
+ * `lib/seo.ts`) — nothing under `app/` reaches this module except through
+ * those or through Server Actions, which cannot be imported by client code.
  *
  * Validation is lazy rather than at module load so that importing this file
  * never crashes a build for a route that does not actually need the API.

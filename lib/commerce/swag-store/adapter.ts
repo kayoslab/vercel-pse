@@ -1,4 +1,3 @@
-import "server-only";
 import { z } from "zod";
 import { money } from "@/lib/money";
 import { isNotFound } from "../errors";

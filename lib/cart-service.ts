@@ -1,4 +1,3 @@
-import "server-only";
 import { commerce, isNotFound, type Cart, type StockLevel } from "@/lib/commerce";
 import { isFrameworkControlFlow } from "@/lib/framework";
 

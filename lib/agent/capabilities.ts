@@ -1,17 +1,14 @@
-import "server-only";
 import { z } from "zod";
 import { addItem } from "@/lib/cart-service";
 import { commerce } from "@/lib/commerce";
-import { getCategoryFacets, getProduct, listCatalogue } from "@/lib/data/catalogue";
-import { getStock } from "@/lib/data/stock";
 import { formatMoney } from "@/lib/money";
 
 /**
  * The store's capabilities as plain functions and schemas.
  *
- * This is the single implementation behind both agent surfaces. The in-app
- * assistant wraps these as AI SDK tools with a cookie-backed session; the MCP
- * server registers them with an explicit cart token, because an external agent
+ * This is the single implementation behind every agent surface. The in-app
+ * eve agent defines tools over these with a session-carried cart token; the
+ * MCP server registers them with an explicit token, because an external agent
  * has no cookies. Neither owns the logic.
  *
  * The alternative — defining tools once per surface — means the storefront's
@@ -19,9 +16,20 @@ import { formatMoney } from "@/lib/money";
  * nothing would surface the divergence until someone noticed the answers
  * disagreed.
  *
+ * Two portability rules keep this consumable by the eve agent service, which
+ * runs outside the Next.js runtime:
+ *
+ * - No `server-only` marker — it throws outside an RSC bundle. The
+ *   client-import guard lives in the Next-facing layers.
+ * - Reads go straight through the commerce provider, not through the
+ *   `'use cache'` data layer — those directives belong to Next. The cache is a
+ *   storefront-page concern; agent traffic is a handful of per-conversation
+ *   calls against a fast catalogue API, and an uncached read can never be
+ *   stale-wrong about stock.
+ *
  * Schemas are exported as plain field maps rather than `z.object(...)` because
- * that is what both consumers want: the AI SDK wraps them itself, and
- * `mcp-handler`'s `registerTool` takes the field map directly.
+ * that is what the consumers want: eve tools and `mcp-handler`'s `registerTool`
+ * both take the field map directly.
  */
 
 /**
@@ -100,9 +108,9 @@ export async function searchProducts(input: {
   const limit = input.limit ?? 6;
   const priced = input.maxPriceCents !== undefined || input.minPriceCents !== undefined;
 
-  const page = await listCatalogue({
-    query: input.query,
-    category: input.category,
+  const page = await commerce.listProducts({
+    search: input.query?.trim() || undefined,
+    category: input.category || undefined,
     limit: priced ? 100 : limit,
   });
 
@@ -127,7 +135,7 @@ export const getProductDetailsSchema = {
 };
 
 export async function getProductDetails(input: { idOrSlug: string }) {
-  const product = await getProduct(input.idOrSlug);
+  const product = await commerce.getProduct(input.idOrSlug);
   if (!product) return { found: false as const };
   return {
     found: true as const,
@@ -141,7 +149,7 @@ export const checkStockSchema = {
 };
 
 export async function checkStock(input: { idOrSlug: string }) {
-  const stock = await getStock(input.idOrSlug);
+  const stock = await commerce.getStock(input.idOrSlug);
   return {
     available: stock.quantity,
     inStock: stock.inStock,
@@ -150,7 +158,12 @@ export async function checkStock(input: { idOrSlug: string }) {
 }
 
 export async function listCategories() {
-  return { categories: await getCategoryFacets() };
+  const categories = await commerce.listCategories();
+  return {
+    categories: categories
+      .filter((c) => c.productCount > 0)
+      .map((c) => ({ slug: c.slug, name: c.name, count: c.productCount })),
+  };
 }
 
 // --------------------------------------------------------------------- cart

@@ -1,4 +1,3 @@
-import "server-only";
 import type { CommerceProvider } from "./provider";
 import { createSwagStoreProvider } from "./swag-store/adapter";
 

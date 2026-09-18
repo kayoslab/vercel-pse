@@ -1,4 +1,3 @@
-import "server-only";
 import type { z } from "zod";
 import { env } from "@/lib/env";
 import { isCancellation } from "@/lib/framework";
@@ -12,8 +11,11 @@ import { errorEnvelopeSchema } from "./schemas";
  * nowhere else: the base URL, the bypass header, the success/error envelope,
  * and the mapping from upstream error codes to domain ones.
  *
- * `server-only` guarantees the bypass token cannot reach a client bundle —
- * importing this from a Client Component is a build error, not a runtime leak.
+ * Runtime-neutral: the eve agent service imports this chain too, and the
+ * `server-only` marker throws outside an RSC bundle. The client-import guard
+ * lives in the Next-facing layers above (`lib/data/*`); the token itself only
+ * ever flows through `env()`, and the deployed client chunks are verified
+ * token-free as part of the release checks.
  */
 
 /** Upstream error codes we recognise; anything else becomes UPSTREAM_ERROR. */
