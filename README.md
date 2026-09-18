@@ -49,6 +49,7 @@ Cache Components (`cacheComponents: true`) inverts the old model: **nothing is c
 | Category list + facets | `'use cache'`, `days` / `hours` | 13 categories, effectively structural |
 | Cart + header badge | `'use cache'` keyed on token + `cacheTag('cart:{token}')` | See [the cart](#the-cart) |
 | Root metadata | `'use cache'` from `/store/config`, `days` | Title template and SEO defaults come from the commerce backend, at zero requests per page |
+| Lifestyle shot (PDP) | generated on demand, then **CDN-immutable for a year** | Expensive AI work as a cache-warmed asset: the image model runs once per product (a few cents for the whole catalogue), every later shopper gets CDN bytes. The caching design doubles as the abuse control — the URL space is exactly the catalogue |
 
 Tags live in one vocabulary module (`lib/cache-tags.ts`); readers (`cacheTag`) and writers (`updateTag`) share it so a typo cannot create a cache entry nobody can invalidate.
 
@@ -132,6 +133,12 @@ The design has now earned its keep four separate times, each through a different
 The agent and MCP endpoints are deliberately unauthenticated (eve fails closed by default; admitting anonymous shoppers is an explicit, documented opt-in in the channel's auth walk): everything readable is already public on the storefront, cart writes require possession of an unguessable token, and a bearer requirement would make both undemonstrable. A production store would put brokered identity in front (`withMcpAuth` / Vercel Connect) so carts belong to authenticated shoppers and per-client rate limits exist.
 
 *Considered and not built:* natural-language → structured search filters feeding `/search` (the same zod schemas that type the tools could type a `generateObject` parser); WhatsApp as a third channel (the channel ecosystem supports it; phone-number provisioning wasn't worth a demo); payment/carrier webhook workflows (the `createWebhook` pattern is production-shaped, but this API has no orders). Left out to keep the layer's surface exactly as large as what is demonstrably consumed.
+
+## Generated merchandising
+
+Every PDP has a **"See it worn" / "See it styled"** button: the product's own photo goes to an image-editing model (`google/gemini-2.5-flash-image`) through the AI Gateway — **OIDC again; adding image generation added no API key** — with a per-category style: wearables on a fictional model in a studio, bags carried, desk gear in a workspace scene. The prompt pins the design ("black, white triangle, unchanged") and says *fictional* twice: generating any real person's likeness is out of bounds, by model policy and by choice.
+
+The interesting decision is the caching row above: the route serves the generated PNG as CDN-immutable, so the ~10-second, few-cent generation happens once per product and the result behaves like a static asset forever after. Failures are `no-store` (an upstream hiccup must not become a cached "no shot" for a year), unknown products 404 before any model call, and the result carries an "AI-generated" label because it is one. The click-to-expand box reserves its dimensions before the image exists — the ten-second swap moves nothing.
 
 ## The hero
 

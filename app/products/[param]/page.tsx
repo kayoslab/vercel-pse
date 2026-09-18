@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
+import { LifestyleShot } from "@/components/commerce/lifestyle-shot";
 import { Price } from "@/components/commerce/price";
 import {
   PurchasePanel,
@@ -107,15 +108,28 @@ export default async function ProductPage({ params }: PageProps) {
           deprecated `priority` prop. The page is prerendered static HTML, so
           the request is discovered as soon as the document arrives.
         */}
-        <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-surface">
-          <Image
-            src={product.images[0]}
-            alt={product.name}
-            fill
-            sizes="(min-width: 1024px) 50vw, 100vw"
-            loading="eager"
-            fetchPriority="high"
-            className="object-cover"
+        <div className="flex flex-col gap-4">
+          <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-surface">
+            <Image
+              src={product.images[0]}
+              alt={product.name}
+              fill
+              sizes="(min-width: 1024px) 50vw, 100vw"
+              loading="eager"
+              fetchPriority="high"
+              className="object-cover"
+            />
+          </div>
+          {/*
+            Generated merchandising: the product's own photo restyled by an
+            image model through the AI Gateway (lib/lifestyle.ts). Lives in
+            the image column so its click-to-expand box grows under the
+            gallery rather than pushing the purchase panel.
+          */}
+          <LifestyleShot
+            productParam={product.slug}
+            productName={product.name}
+            worn={["t-shirts", "hoodies", "socks", "hats"].includes(product.category)}
           />
         </div>
 
