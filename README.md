@@ -102,7 +102,7 @@ Details that took iteration:
    claude mcp add --transport http swag-store https://vercel-swag-store-lac.vercel.app/api/mcp
    ```
 
-What differs between consumers is only the **session**. An MCP client has no cookies, so it calls `create_cart` once and carries the token explicitly. The browser's cart lives in an httpOnly cookie that client JavaScript can never read — so it crosses into the agent service at the one seam where a server sees the request: the eve channel's auth walk lifts it into the session's auth attributes, and tools read it from there. The capability functions never know which caller they serve.
+What differs between consumers is only the **session** — three strategies, one per caller kind. The browser's cart lives in an httpOnly cookie that client JavaScript can never read; it crosses into the agent service at the one seam where a server sees the request, the eve channel's auth walk, which lifts it into the session's auth attributes. An MCP client has no cookies, so it calls `create_cart` once and carries the token explicitly. And a cookie-less eve session — a Slack thread, a script, an eval — gets a cart the **session itself owns**: minted lazily on first add and kept in eve's durable session state, so a Slack thread's cart survives across turns and days exactly like the conversation it belongs to. The capability functions never know which caller they serve.
 
 ### What eve adds that a chat route couldn't
 
@@ -111,19 +111,25 @@ The previous iteration of this assistant was a standalone AI SDK route — same 
 Durability makes two commerce behaviours possible that a chat route cannot express:
 
 - **`watch_stock`** — this API randomises stock per request and genuinely hits zero, so "tell me when it's back" is a real request the storefront could never answer. The tool is a background **workflow**: it returns a task receipt immediately, then alternates a stock check with a durable sleep that holds no compute. Close the panel, navigate away — the run persists, and when stock appears, the completed task wakes the agent, which reports back into the same conversation.
-- **Approval-gated writes** — `add_to_cart` above $50 pauses on a confirmation card (`ctx.ask`) and parks, without compute, until the shopper answers — minutes or days later. The confirmation gates *intent*; the shared stock guard still gates *feasibility* at add time, in that order. Agents that write to carts showing their work before larger writes is the enterprise shape of agentic commerce.
+- **Approval-gated writes** — `add_to_cart` at $50+ pauses for the shopper's sign-off and parks, without compute, until they answer — minutes or days later. The gate is eve's **approval policy**, async and priced: it looks the product up and demands approval only when the value warrants it. The confirmation gates *intent*; the shared stock guard still gates *feasibility* at add time, in that order. (The division of labour is deliberate: human sign-off is *policy*, long-lived promises are *workflows* — a distinction forced by a real boundary we verified empirically: durable session state is reachable from ordinary tool context but not from workflow steps, whose writes land in a discarded scope.) Agents that show their work before spending money is the enterprise shape of agentic commerce.
 
 The model is configured as an AI Gateway slug (`anthropic/claude-opus-5`), so the ops story is unchanged: **no AI provider API key exists anywhere in this project** — Gateway auth is Vercel OIDC, provisioned and rotated by the platform.
+
+### The same agent, in Slack
+
+`agent/channels/slack.ts` is one file, and the identical agent takes swag orders in Slack — DMs, mentions, threads. Credentials live in **Vercel Connect**; no Slack token or signing secret enters this project. The $50 approval renders as native Approve/Cancel buttons, with shopper-facing copy composed by an authored `input.requested` handler ("Before I spend your money: add 1 × Black Pullover Hoodie to your cart for $60.00?") instead of the framework's developer-facing default — tool ceremony is user-visible copy, the same rule as tool output.
+
+A schedule (`agent/schedules/catalogue-health.ts` → a Vercel Cron) posts a daily **catalogue health digest** into a merchandising channel: empty categories, out-of-stock and low-stock featured products with counts, the running promotion. It is the "ops automation that happens to converse" case — and it earned its keep immediately: the digest agent's first run correctly reported two gaps in its own tooling (no featured filter, no promotions read), and a Slack shopper found a third (no cart removal). All three were fixed once, in the capability layer, for every consumer at once.
 
 ### The chips are tests
 
 Every suggestion chip in the panel is a commitment — it is the one input a reviewer is guaranteed to try — so each lives in `evals/` as a deterministic regression test (`eve eval`): the under-$25 chip asserts the price constraint travels **in the tool call** (the fix for a real bug where the model fetched unfiltered results and the cards contradicted its prose), the cartless add asserts failure is relayed as data rather than papered over, and two more pin the boundary (payment requests decline without touching tools) and the first rule (unknown products are searched, not guessed at). Five evals, thirteen gates, no judge model — a failure means a broken contract, not a grader's opinion.
 
-The design earned its keep concretely, twice: driving the MCP endpoint in a loop surfaced the oversell bug described above, and the under-$25 bug was fixed once in the capability layer for every consumer simultaneously. That is the argument for the shared layer in two sentences.
+The design has now earned its keep four separate times, each through a different consumer: the MCP loop found the oversell bug, the under-$25 chip found the constraint gap, the scheduled digest found the missing reads by naming its own blind spots, and a Slack shopper found the missing writes. Every fix landed once, in the capability layer, for all consumers simultaneously. The shared layer is not just DRY — each new consumer is a free auditor of all the others.
 
 The agent and MCP endpoints are deliberately unauthenticated (eve fails closed by default; admitting anonymous shoppers is an explicit, documented opt-in in the channel's auth walk): everything readable is already public on the storefront, cart writes require possession of an unguessable token, and a bearer requirement would make both undemonstrable. A production store would put brokered identity in front (`withMcpAuth` / Vercel Connect) so carts belong to authenticated shoppers and per-client rate limits exist.
 
-*Considered and not built:* natural-language → structured search filters feeding `/search` (the same zod schemas that type the tools could type a `generateObject` parser); Slack as a second eve channel; scheduled agent digests. Left out to keep the layer's surface exactly as large as what is demonstrably consumed.
+*Considered and not built:* natural-language → structured search filters feeding `/search` (the same zod schemas that type the tools could type a `generateObject` parser); WhatsApp as a third channel (the channel ecosystem supports it; phone-number provisioning wasn't worth a demo); payment/carrier webhook workflows (the `createWebhook` pattern is production-shaped, but this API has no orders). Left out to keep the layer's surface exactly as large as what is demonstrably consumed.
 
 ## The hero
 
@@ -161,8 +167,13 @@ agent/                  the eve agent, as files
   instructions.md       the agent's behaviour contract
   agent.ts              model config (an AI Gateway slug — no API key)
   channels/eve.ts       route auth; lifts the cart cookie into the session
-  tools/                thin wrappers over the capability layer; add_to_cart
-                        and watch_stock are durable workflow tools
+  channels/slack.ts     the same agent in Slack (creds in Vercel Connect);
+                        renders approvals in the store's voice
+  schedules/            catalogue-health digest → Vercel Cron → Slack
+  lib/session-cart.ts   the session-owned cart for cookie-less callers
+  tools/                thin wrappers over the capability layer;
+                        watch_stock is a durable background workflow,
+                        add_to_cart is gated by a priced approval policy
 evals/                  the suggestion chips as deterministic regression
                         tests (eve eval)
 components/
