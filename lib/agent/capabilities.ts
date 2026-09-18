@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { addItem } from "@/lib/cart-service";
+import { addItem, removeItem, setQuantity } from "@/lib/cart-service";
 import { commerce } from "@/lib/commerce";
 import { formatMoney } from "@/lib/money";
 
@@ -75,6 +75,10 @@ export const searchProductsSchema = {
     .string()
     .optional()
     .describe("Category slug to narrow to. Call list_categories if unsure."),
+  featured: z
+    .boolean()
+    .optional()
+    .describe("Only the store's featured picks (the homepage grid, 6 products)."),
   maxPriceCents: z
     .number()
     .int()
@@ -101,6 +105,7 @@ export const searchProductsSchema = {
 export async function searchProducts(input: {
   query?: string;
   category?: string;
+  featured?: boolean;
   maxPriceCents?: number;
   minPriceCents?: number;
   limit?: number;
@@ -111,6 +116,7 @@ export async function searchProducts(input: {
   const page = await commerce.listProducts({
     search: input.query?.trim() || undefined,
     category: input.category || undefined,
+    featured: input.featured,
     limit: priced ? 100 : limit,
   });
 
@@ -163,6 +169,25 @@ export async function listCategories() {
     categories: categories
       .filter((c) => c.productCount > 0)
       .map((c) => ({ slug: c.slug, name: c.name, count: c.productCount })),
+  };
+}
+
+/**
+ * The running promotion, if any. Added after the scheduled digest agent
+ * reported — correctly — that no tool exposed promotions: the banner was
+ * UI-only. The API randomises the promotion per request, so this is a live
+ * read like stock, never a cached claim.
+ */
+export async function getPromotion() {
+  const promotion = await commerce.getActivePromotion();
+  if (!promotion) return { active: false as const };
+  return {
+    active: true as const,
+    title: promotion.title,
+    description: promotion.description,
+    discountPercent: promotion.discountPercent,
+    code: promotion.code,
+    validUntil: promotion.validUntil,
   };
 }
 
@@ -228,6 +253,60 @@ export async function addToCart(
 
   return {
     added: true,
+    itemCount: result.cart.totalItems,
+    subtotal: formatMoney(result.cart.subtotal, "en-US"),
+  };
+}
+
+export const updateCartItemSchema = {
+  productId: z.string().describe("Product id, e.g. tshirt_001."),
+  quantity: z
+    .number()
+    .int()
+    .min(0)
+    .describe("New absolute quantity for the line; 0 removes it entirely."),
+};
+
+export const removeFromCartSchema = {
+  productId: z.string().describe("Product id of the line to remove."),
+};
+
+export type CartChangeOutcome =
+  | { changed: true; itemCount: number; subtotal: string }
+  | { changed: false; reason: string; staleCart?: boolean };
+
+/**
+ * Quantity change / removal, added after a Slack shopper asked to remove an
+ * item and the agent had to refuse: the storefront's steppers had these
+ * operations all along (the shared cart service), but they were never exposed
+ * as agent tools — and a Slack session's cart has no cart page to fall back
+ * to. Same guards as the UI path, because it IS the UI path's service.
+ */
+export async function updateCartItem(
+  token: string,
+  input: { productId: string; quantity: number },
+): Promise<CartChangeOutcome> {
+  return toChangeOutcome(await setQuantity(token, input.productId, input.quantity));
+}
+
+export async function removeFromCart(
+  token: string,
+  input: { productId: string },
+): Promise<CartChangeOutcome> {
+  return toChangeOutcome(await removeItem(token, input.productId));
+}
+
+function toChangeOutcome(
+  result: Awaited<ReturnType<typeof setQuantity>>,
+): CartChangeOutcome {
+  if (!result.ok) {
+    if (result.cartMissing) {
+      return { changed: false, staleCart: true, reason: "The cart session has expired." };
+    }
+    return { changed: false, reason: result.error };
+  }
+  return {
+    changed: true,
     itemCount: result.cart.totalItems,
     subtotal: formatMoney(result.cart.subtotal, "en-US"),
   };

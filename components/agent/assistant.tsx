@@ -18,6 +18,9 @@ const TOOL_LABELS: Record<string, string> = {
   list_categories: "Listing categories",
   view_cart: "Reading your cart",
   add_to_cart: "Adding to your cart",
+  update_cart_item: "Updating your cart",
+  remove_from_cart: "Removing from your cart",
+  get_promotion: "Checking the current promotion",
   watch_stock: "Setting up a stock watch",
 };
 

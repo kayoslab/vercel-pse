@@ -9,9 +9,10 @@ import * as capabilities from "@/lib/agent/capabilities";
  */
 export default defineTool({
   description:
-    "Search the store catalogue by free-text term, category and/or price " +
-    "range. Use this first for any question about what the store sells. When " +
-    "the shopper names a budget, pass it as maxPriceCents/minPriceCents — the " +
+    "Search the store catalogue by free-text term, category, featured flag " +
+    "and/or price range. Use this first for any question about what the store " +
+    "sells; pass featured=true for the store's curated picks. When the " +
+    "shopper names a budget, pass it as maxPriceCents/minPriceCents — the " +
     "results are shown to them directly, so the search itself must respect " +
     "the limit.",
   inputSchema: z.object(capabilities.searchProductsSchema),

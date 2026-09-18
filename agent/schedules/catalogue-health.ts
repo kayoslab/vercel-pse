@@ -26,8 +26,8 @@ export default defineSchedule({
         [
           "Compile the daily catalogue health digest for the merchandising team:",
           "1. Call list_categories and flag any category with zero products.",
-          "2. Check stock for each of the store's featured products (search with featured items first if needed) and list any that are out of stock or low, with the numbers.",
-          "3. Note the currently running promotion, if any.",
+          "2. Fetch the featured products (search_products with featured=true), check stock for each, and list any that are out of stock or low, with the numbers.",
+          "3. Call get_promotion and note the running promotion's code and discount, or that none is running.",
           "Keep it under ten short lines of plain text. Lead with the most actionable finding. If everything is healthy, say so in one line instead.",
         ].join("\n"),
         { auth: appAuth },

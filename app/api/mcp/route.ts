@@ -94,6 +94,18 @@ const handler = createMcpHandler(
     );
 
     server.registerTool(
+      "get_promotion",
+      {
+        title: "Current promotion",
+        description:
+          "The currently running promotion (code, percentage, validity), or " +
+          "none. Randomised per request — call at the moment of need.",
+        inputSchema: {},
+      },
+      async () => asText(await capabilities.getPromotion()),
+    );
+
+    server.registerTool(
       "create_cart",
       {
         title: "Create a cart",
@@ -133,6 +145,36 @@ const handler = createMcpHandler(
       },
       async ({ cartToken, ...input }) =>
         asText(await capabilities.addToCart(cartToken, input)),
+    );
+
+    server.registerTool(
+      "update_cart_item",
+      {
+        title: "Update cart item",
+        description:
+          "Set the absolute quantity of a product in a cart; 0 removes it. " +
+          "Stock is re-checked for increases, so this can legitimately fail.",
+        inputSchema: {
+          cartToken: z.string().describe("Token returned by create_cart."),
+          ...capabilities.updateCartItemSchema,
+        },
+      },
+      async ({ cartToken, ...input }) =>
+        asText(await capabilities.updateCartItem(cartToken, input)),
+    );
+
+    server.registerTool(
+      "remove_from_cart",
+      {
+        title: "Remove from cart",
+        description: "Remove a product line from a cart entirely.",
+        inputSchema: {
+          cartToken: z.string().describe("Token returned by create_cart."),
+          ...capabilities.removeFromCartSchema,
+        },
+      },
+      async ({ cartToken, ...input }) =>
+        asText(await capabilities.removeFromCart(cartToken, input)),
     );
   },
   {
@@ -199,8 +241,8 @@ const EXPLAINER_HTML = `<!doctype html>
      there is nothing further to see in a browser. Point an agent at it instead:</p>
   <pre>claude mcp add --transport http swag-store \
   https://vercel-swag-store-lac.vercel.app/api/mcp</pre>
-  <p>Seven tools: search, product details, live stock, categories, and an anonymous
-     token-scoped cart. <a href="/">Back to the store</a></p>
+  <p>Ten tools: search, product details, live stock, categories, the running promotion,
+     and an anonymous token-scoped cart with add, update and remove. <a href="/">Back to the store</a></p>
 </main>
 </body>
 </html>
