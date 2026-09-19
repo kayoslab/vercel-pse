@@ -2,7 +2,8 @@ import { Suspense } from "react";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { LifestyleShot } from "@/components/commerce/lifestyle-shot";
+import { LifestyleShotGhost } from "@/components/commerce/lifestyle-shot";
+import { LifestyleShotGate } from "@/components/commerce/lifestyle-shot-gate";
 import { Price } from "@/components/commerce/price";
 import {
   PurchasePanel,
@@ -124,13 +125,24 @@ export default async function ProductPage({ params }: PageProps) {
             Generated merchandising: the product's own photo restyled by an
             image model through the AI Gateway (lib/lifestyle.ts). Lives in
             the image column so its click-to-expand box grows under the
-            gallery rather than pushing the purchase panel.
+            gallery rather than pushing the purchase panel. Feature-flagged:
+            the gate reads the flag in its own Suspense hole (a flag read is
+            request data), with the exact button as an invisible fallback so
+            the decision streams in without moving anything.
           */}
-          <LifestyleShot
-            productParam={product.slug}
-            productName={product.name}
-            worn={["t-shirts", "hoodies", "socks", "hats"].includes(product.category)}
-          />
+          <Suspense
+            fallback={
+              <LifestyleShotGhost
+                worn={["t-shirts", "hoodies", "socks", "hats"].includes(product.category)}
+              />
+            }
+          >
+            <LifestyleShotGate
+              productParam={product.slug}
+              productName={product.name}
+              worn={["t-shirts", "hoodies", "socks", "hats"].includes(product.category)}
+            />
+          </Suspense>
         </div>
 
         <div className="flex flex-col gap-6">

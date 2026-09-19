@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import createWithVercelToolbar from "@vercel/toolbar/plugins/next";
 import { withEve } from "eve/next";
 
 const nextConfig: NextConfig = {
@@ -45,5 +46,11 @@ const nextConfig: NextConfig = {
  * one dev command, one Vercel project, with the agent running as its own
  * service beside the Next.js app. The storefront's rendering model is
  * untouched: the agent is additive routing, not a rendering change.
+ *
+ * The toolbar plugin wires the local-dev Vercel Toolbar (Flags Explorer
+ * overrides); on Vercel deployments the toolbar is injected by the platform.
+ * Order matters: the toolbar wraps the plain config; withEve wraps last,
+ * because it returns Next's function-form config to orchestrate the agent
+ * service alongside the app.
  */
-export default withEve(nextConfig);
+export default withEve(createWithVercelToolbar()(nextConfig));

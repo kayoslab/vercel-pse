@@ -140,6 +140,15 @@ Every PDP has a **"See it worn" / "See it styled"** button: the product's own ph
 
 The interesting decision is the caching row above: the route serves the generated PNG as CDN-immutable, so the ~10-second, few-cent generation happens once per product and the result behaves like a static asset forever after. Failures are `no-store` (an upstream hiccup must not become a cached "no shot" for a year), unknown products 404 before any model call, and the result carries an "AI-generated" label because it is one. The click-to-expand box reserves its dimensions before the image exists — the ten-second swap moves nothing.
 
+## Feature flags
+
+Two **Vercel Flags** (Flags SDK, `vercelAdapter`) gate the optional capabilities: `lifestyle-shots` (the PDP button *and* its generation route — turning it off disables the spend, not just the UI) and `catalogue-digest` (the Slack cron). Both toggle at runtime — `vercel flags set <flag> --environment production --variant false` — with no redeploy, are overridable per-browser through the Toolbar's Flags Explorer, and fail open to "as shipped" if the flag service is unreachable.
+
+Two placements carry the platform reasoning:
+
+- **A flag read is request data**, so on the prerendered PDP it lives where all request data lives: a small Suspense hole beside stock, with the exact button rendered invisible as the fallback so the streamed decision moves nothing (CLS 0 verified in both states). The shell stays fully static. The alternative for flagged content that must be *in* the shell — hero variants, layout tests — is the Flags SDK's precompute pattern; for one button below the fold, the streamed hole is the cheaper correct boundary.
+- **The digest cron fires in the eve service**, outside any Next request, so it evaluates the same flag key through the adapter directly (`agent/lib/flags.ts`) — one toggle governs the storefront and the cron alike, because the flag store, not the framework, is the source of truth.
+
 ## The hero
 
 The hero's triangle is a plain white SVG in the prerendered shell — and on capable desktops it upgrades itself into a live **WebGPU rendering of the same mark** (LED edge lighting, raycast floor radiance, pointer-tracked glow), using the *Triangle LED Hero* example from [vgpu](https://vgpu.sh), Vercel Labs' WebGPU library, released days before this build.

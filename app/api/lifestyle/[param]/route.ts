@@ -1,3 +1,4 @@
+import { lifestyleShotsFlag } from "@/flags";
 import { commerce } from "@/lib/commerce";
 import { generateLifestyleShot } from "@/lib/lifestyle";
 
@@ -24,6 +25,16 @@ export async function GET(
   { params }: { params: Promise<{ param: string }> },
 ) {
   const { param } = await params;
+
+  // Defense in depth with the PDP's own gate: turning the flag off disables
+  // the spend, not just the button. `no-store`, so a toggle takes effect on
+  // the next request rather than being cached away.
+  if (!(await lifestyleShotsFlag())) {
+    return new Response("Feature disabled", {
+      status: 404,
+      headers: { "cache-control": "no-store" },
+    });
+  }
 
   const product = await commerce.getProduct(param).catch(() => null);
   if (!product) {

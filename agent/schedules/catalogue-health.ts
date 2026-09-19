@@ -1,5 +1,6 @@
 import { defineSchedule } from "eve/schedules";
 import slack from "../channels/slack";
+import { serviceFlagEnabled } from "../lib/flags";
 
 /**
  * The daily merchandising digest: the agent sweeps its own catalogue and
@@ -20,6 +21,11 @@ export default defineSchedule({
   async run({ to, waitUntil, appAuth }) {
     const channelId = process.env.SLACK_DIGEST_CHANNEL_ID;
     if (!channelId) return;
+
+    // Runtime kill switch, no redeploy: the same Vercel Flag the storefront
+    // reads, evaluated here through the adapter directly (agent/lib/flags.ts)
+    // because the cron fires in the eve service, outside any Next request.
+    if (!(await serviceFlagEnabled("catalogue-digest"))) return;
 
     waitUntil(
       to(slack, { channelId }).send(

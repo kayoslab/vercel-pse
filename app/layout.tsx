@@ -5,6 +5,7 @@ import { CartBadgeProvider } from "@/components/cart/cart-badge-context";
 import { SiteFooter } from "@/components/layout/site-footer";
 import { Assistant } from "@/components/agent/assistant";
 import { SiteHeader } from "@/components/layout/site-header";
+import { VercelToolbar } from "@vercel/toolbar/next";
 import { getStoreConfig } from "@/lib/data/store";
 import { SITE_URL } from "@/lib/seo";
 import "./globals.css";
@@ -86,6 +87,8 @@ export default function RootLayout({
         <Suspense fallback={null}>
           <Assistant />
         </Suspense>
+        {/* Local-dev only: on Vercel deployments the platform injects the toolbar. */}
+        {process.env.NODE_ENV === "development" && <VercelToolbar />}
       </body>
     </html>
   );

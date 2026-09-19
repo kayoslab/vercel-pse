@@ -109,6 +109,24 @@ export function LifestyleShot({ productParam, productName, worn }: LifestyleShot
   );
 }
 
+/**
+ * Dimension ghost for the flag gate's Suspense fallback: the exact button,
+ * rendered invisible, so the streamed flag decision cannot shift layout in
+ * the common flag-on case. (Flag-off collapses the reserved space — one
+ * shift, only in the administrative state, which is the documented trade of
+ * choosing a streamed hole over the precompute pattern.)
+ */
+export function LifestyleShotGhost({ worn }: { worn: boolean }) {
+  return (
+    <div aria-hidden className="invisible self-start">
+      <Button type="button" variant="secondary" tabIndex={-1}>
+        <SparkleIcon />
+        {worn ? "See it worn" : "See it styled"}
+      </Button>
+    </div>
+  );
+}
+
 function SparkleIcon() {
   return (
     <svg viewBox="0 0 24 24" className="size-4 fill-current" aria-hidden>
