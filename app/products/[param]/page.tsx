@@ -1,9 +1,9 @@
 import { Suspense } from "react";
-import Image from "next/image";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { LifestyleShotGhost } from "@/components/commerce/lifestyle-shot";
+import { LifestyleTileGhost } from "@/components/commerce/lifestyle-shot";
 import { LifestyleShotGate } from "@/components/commerce/lifestyle-shot-gate";
+import { ProductGallery } from "@/components/commerce/product-gallery";
 import { Price } from "@/components/commerce/price";
 import {
   PurchasePanel,
@@ -103,47 +103,27 @@ export default async function ProductPage({ params }: PageProps) {
       />
       <div className="grid gap-8 py-10 sm:py-14 lg:grid-cols-2 lg:gap-14">
         {/*
-          Aspect-ratio box reserves the image's space before it loads. This
-          image is the LCP element at every viewport, so it is fetched eagerly
-          with fetchPriority="high" — the Next 16 replacement for the
+          The gallery's hero box reserves the image's space before it loads.
+          That image is the LCP element at every viewport, so it is fetched
+          eagerly with fetchPriority="high" — the Next 16 replacement for the
           deprecated `priority` prop. The page is prerendered static HTML, so
           the request is discovered as soon as the document arrives.
+
+          Generated merchandising (lib/lifestyle.ts) enters as a sparkle tile
+          in the gallery rail; the generated shot replaces the hero but the
+          original photo stays one thumbnail away. Feature-flagged: the gate
+          reads the flag in its own Suspense hole (a flag read is request
+          data), with an invisible tile of the exact slot size as fallback so
+          the decision streams in without moving the rail.
         */}
-        <div className="flex flex-col gap-4">
-          <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-surface">
-            <Image
-              src={product.images[0]}
-              alt={product.name}
-              fill
-              sizes="(min-width: 1024px) 50vw, 100vw"
-              loading="eager"
-              fetchPriority="high"
-              className="object-cover"
-            />
-          </div>
-          {/*
-            Generated merchandising: the product's own photo restyled by an
-            image model through the AI Gateway (lib/lifestyle.ts). Lives in
-            the image column so its click-to-expand box grows under the
-            gallery rather than pushing the purchase panel. Feature-flagged:
-            the gate reads the flag in its own Suspense hole (a flag read is
-            request data), with the exact button as an invisible fallback so
-            the decision streams in without moving anything.
-          */}
-          <Suspense
-            fallback={
-              <LifestyleShotGhost
-                worn={["t-shirts", "hoodies", "socks", "hats"].includes(product.category)}
-              />
-            }
-          >
+        <ProductGallery image={product.images[0]} productName={product.name}>
+          <Suspense fallback={<LifestyleTileGhost />}>
             <LifestyleShotGate
               productParam={product.slug}
-              productName={product.name}
               worn={["t-shirts", "hoodies", "socks", "hats"].includes(product.category)}
             />
           </Suspense>
-        </div>
+        </ProductGallery>
 
         <div className="flex flex-col gap-6">
           <div className="flex flex-col gap-3">
