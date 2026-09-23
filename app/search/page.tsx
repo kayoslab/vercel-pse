@@ -15,6 +15,7 @@ import {
 } from "@/components/commerce/search-input";
 import { buttonStyles } from "@/components/ui/button";
 import { Container } from "@/components/ui/container";
+import { SearchParamsBoundary } from "@/components/ui/searchparams-boundary";
 import { getCategoryFacets, listCatalogue } from "@/lib/data/catalogue";
 import { pageMetadata } from "@/lib/seo";
 
@@ -74,15 +75,22 @@ export default function SearchPage({ searchParams }: PageProps) {
         </div>
 
         {/*
-          Keyed on the resolved parameters so a new search re-suspends and shows
-          the skeleton, rather than leaving the previous results on screen with no
+          Keyed on the query and category (client-side, so the page never has
+          to await searchParams) so a new search re-suspends and shows the
+          skeleton, rather than leaving the previous results on screen with no
           indication that anything is happening. The controls keep their own
-          pending styling for the sub-second case.
+          pending styling for the sub-second case; the outer boundary covers
+          prerender and first paint.
         */}
         {/* Product cards render <h3>; this keeps the heading outline sequential. */}
         <h2 className="sr-only">Results</h2>
         <Suspense fallback={<ProductResultsSkeleton count={RESULT_LIMIT} />}>
-          <Results searchParams={searchParams} />
+          <SearchParamsBoundary
+            params={["q", "category"]}
+            fallback={<ProductResultsSkeleton count={RESULT_LIMIT} />}
+          >
+            <Results searchParams={searchParams} />
+          </SearchParamsBoundary>
         </Suspense>
       </div>
     </Container>

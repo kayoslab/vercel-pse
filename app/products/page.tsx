@@ -10,6 +10,7 @@ import {
   ProductResultsSkeleton,
 } from "@/components/commerce/product-results";
 import { Container } from "@/components/ui/container";
+import { SearchParamsBoundary } from "@/components/ui/searchparams-boundary";
 import { getCategoryFacets, listCatalogue } from "@/lib/data/catalogue";
 import { pageMetadata } from "@/lib/seo";
 
@@ -48,8 +49,21 @@ export default function ProductsPage({ searchParams }: PageProps) {
 
         {/* Product cards render <h3>; this keeps the heading outline sequential. */}
         <h2 className="sr-only">Results</h2>
+        {/*
+          Two boundaries, two jobs. The outer one covers prerender and first
+          paint (useSearchParams below is request data, so the build demands
+          it). The inner, param-keyed one re-shows the skeleton when the page
+          or category changes — without it, a pagination click keeps the old
+          results frozen on screen until the new page streams in, which reads
+          as a dead button.
+        */}
         <Suspense fallback={<ProductResultsSkeleton count={PAGE_SIZE} />}>
-          <Catalogue searchParams={searchParams} />
+          <SearchParamsBoundary
+            params={["category", "page"]}
+            fallback={<ProductResultsSkeleton count={PAGE_SIZE} />}
+          >
+            <Catalogue searchParams={searchParams} />
+          </SearchParamsBoundary>
         </Suspense>
       </div>
     </Container>
