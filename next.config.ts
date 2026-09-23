@@ -31,6 +31,10 @@ const nextConfig: NextConfig = {
   },
 
   images: {
+    // AVIF first, WebP fallback: ~20-30% smaller for these flat product
+    // shots, negotiated per Accept header. The optimizer caches each
+    // transcode, so the AVIF encode cost is paid once per variant.
+    formats: ["image/avif", "image/webp"],
     remotePatterns: [
       {
         protocol: "https",

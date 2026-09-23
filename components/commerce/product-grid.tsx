@@ -16,9 +16,13 @@ const GRID = "grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 lg:grid-cols-3";
 /**
  * The `sizes` hint corresponding to `GRID`'s breakpoints. Declared next to the
  * layout it describes so the two cannot drift apart — previously the card held
- * this string and had no way to know what container it was in.
+ * this string and had no way to know what container it was in. The leading
+ * clause caps the hint where the wide (1280px) container stops growing: a
+ * cell is ~390px there no matter how wide the viewport, and a bare 33vw
+ * would have large screens downloading oversized variants.
  */
-const GRID_IMAGE_SIZES = "(min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
+const GRID_IMAGE_SIZES =
+  "(min-width: 1280px) 390px, (min-width: 1024px) 33vw, (min-width: 640px) 50vw, 100vw";
 
 export function ProductGrid({ products, priorityCount = 0 }: ProductGridProps) {
   return (

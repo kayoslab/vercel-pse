@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { lifestyleShotsFlag } from "@/flags";
 import { commerce } from "@/lib/commerce";
 import { generateLifestyleShot } from "@/lib/lifestyle";
@@ -52,10 +53,25 @@ export async function GET(
     });
   }
 
-  return new Response(new Uint8Array(shot.data), {
+  // The model returns PNG; the route owns the delivery format. A photographic
+  // PNG is ~1.2MB — transcoding to WebP at display-appropriate dimensions is
+  // ~10x smaller, and the CDN caches the transcoded bytes, so the cost is
+  // paid once per product alongside the generation itself. If the transcode
+  // fails the original still ships: worse bytes beat no image.
+  const delivered = await sharp(shot.data)
+    .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 82 })
+    .toBuffer()
+    .then((data) => ({ data: new Uint8Array(data), mediaType: "image/webp" }))
+    .catch((error: unknown) => {
+      console.error("lifestyle transcode failed", error);
+      return { data: new Uint8Array(shot.data), mediaType: shot.mediaType };
+    });
+
+  return new Response(delivered.data, {
     status: 200,
     headers: {
-      "content-type": shot.mediaType,
+      "content-type": delivered.mediaType,
       "cache-control": "public, max-age=3600, s-maxage=31536000, immutable",
     },
   });

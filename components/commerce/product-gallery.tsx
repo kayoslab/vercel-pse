@@ -92,7 +92,11 @@ export function ProductGallery({ image, productName, children }: ProductGalleryP
             src={image}
             alt={productName}
             fill
-            sizes="(min-width: 1024px) 50vw, 100vw"
+            // The page's wide container caps at 1280px, so past that the
+            // image column is ~580px regardless of viewport — a bare 50vw
+            // would have a 1920px viewport downloading near-double the
+            // pixels the layout can show.
+            sizes="(min-width: 1280px) 580px, (min-width: 1024px) 50vw, 100vw"
             loading="eager"
             fetchPriority="high"
             className="object-cover"
