@@ -6,6 +6,8 @@ import { SiteFooter } from "@/components/layout/site-footer";
 import { Assistant } from "@/components/agent/assistant";
 import { SiteHeader } from "@/components/layout/site-header";
 import { VercelToolbar } from "@vercel/toolbar/next";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { getStoreConfig } from "@/lib/data/store";
 import { SITE_URL } from "@/lib/seo";
 import "./globals.css";
@@ -89,6 +91,14 @@ export default function RootLayout({
         </Suspense>
         {/* Local-dev only: on Vercel deployments the platform injects the toolbar. */}
         {process.env.NODE_ENV === "development" && <VercelToolbar />}
+        {/*
+          Real-user measurement: Web Analytics (traffic) and Speed Insights
+          (field Core Web Vitals from actual visitors — the lab Lighthouse
+          numbers' production counterpart). Both load after hydration and
+          render nothing, so the static shell and CLS are untouched.
+        */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

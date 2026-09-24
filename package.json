@@ -11,7 +11,9 @@
   "dependencies": {
     "@flags-sdk/vercel": "^1.4.8",
     "@modelcontextprotocol/server": "^2.0.0",
+    "@vercel/analytics": "^2.0.1",
     "@vercel/connect": "^2.2.0",
+    "@vercel/speed-insights": "^2.0.0",
     "@vercel/toolbar": "^0.2.7",
     "ai": "^7.0.105",
     "eve": "^0.58.1",

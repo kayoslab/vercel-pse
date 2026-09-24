@@ -14,6 +14,14 @@ type PaginationControlsProps = {
  * That makes it work with no JavaScript, keeps each page a real shareable URL,
  * and lets the router prefetch the next page on hover. A client component with
  * `router.push` would ship JS to do worse.
+ *
+ * `prefetch` is deliberately asymmetric across the app: these links prefetch
+ * the FULL route (the results hole is cached catalogue data — cheap, and by
+ * click time the next page has usually already streamed), while product card
+ * links keep the default shell-only prefetch, because their stock hole is
+ * real-time data that must not be fetched speculatively and would be stale by
+ * click anyway. Same classification that drives the caching spine, applied
+ * to prefetching.
  */
 export function PaginationControls({ pagination, hrefForPage }: PaginationControlsProps) {
   if (pagination.totalPages <= 1) return null;
@@ -23,7 +31,11 @@ export function PaginationControls({ pagination, hrefForPage }: PaginationContro
   return (
     <nav className="flex items-center justify-between gap-4" aria-label="Pagination">
       {hasPreviousPage ? (
-        <Link href={hrefForPage(page - 1)} className={buttonStyles({ variant: "secondary" })}>
+        <Link
+          href={hrefForPage(page - 1)}
+          prefetch={true}
+          className={buttonStyles({ variant: "secondary" })}
+        >
           ← Previous
         </Link>
       ) : (
@@ -39,7 +51,11 @@ export function PaginationControls({ pagination, hrefForPage }: PaginationContro
       </p>
 
       {hasNextPage ? (
-        <Link href={hrefForPage(page + 1)} className={buttonStyles({ variant: "secondary" })}>
+        <Link
+          href={hrefForPage(page + 1)}
+          prefetch={true}
+          className={buttonStyles({ variant: "secondary" })}
+        >
           Next →
         </Link>
       ) : (
