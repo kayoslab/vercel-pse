@@ -38,7 +38,10 @@ export async function readCartToken(): Promise<string | undefined> {
  * the fallback if the invalidation discipline ever looks shaky.
  */
 async function getCartByToken(token: string): Promise<Cart | null> {
-  "use cache";
+  // Remote: the badge reads this on every navigation, always at request time.
+  // Per-token keys mean one entry per shopper — low cross-user utilization,
+  // but high within-session reuse, which is exactly the read this exists for.
+  "use cache: remote";
   cacheLife("minutes");
   cacheTag(cacheTags.cart(token));
 

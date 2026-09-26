@@ -17,7 +17,9 @@ import type { StoreConfig } from "@/lib/commerce";
  * wrong for a month unless someone remembers to invalidate the tag.
  */
 export async function getStoreConfig(): Promise<StoreConfig> {
-  "use cache";
+  // Remote so dynamic renders (search, PLP, cart) share one entry across
+  // instances instead of re-fetching the config per request.
+  "use cache: remote";
   cacheLife("days");
   cacheTag(cacheTags.storeConfig);
 

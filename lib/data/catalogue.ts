@@ -73,7 +73,11 @@ export async function listCatalogue({
   page,
   limit,
 }: CatalogueQuery): Promise<Page<Product>> {
-  "use cache";
+  // Remote, not in-memory: this runs per request (searchParams), and on
+  // serverless each instance's memory dies with it — plain "use cache" never
+  // produced a warm hit in production. The remote handler shares entries
+  // across instances, so one shopper's page-2 visit pays the upstream once.
+  "use cache: remote";
   cacheLife("hours");
   cacheTag(cacheTags.products);
 
@@ -111,7 +115,9 @@ export type CategoryFacet = {
  * that would have to change.
  */
 export async function getCategoryFacets(query?: string): Promise<readonly CategoryFacet[]> {
-  "use cache";
+  // Remote for the same reason as listCatalogue: query-scoped facets render
+  // per request, where in-memory entries cannot survive between instances.
+  "use cache: remote";
   cacheLife("hours");
   cacheTag(cacheTags.products, cacheTags.categories);
 
