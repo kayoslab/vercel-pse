@@ -121,18 +121,24 @@ export async function getCategoryFacets(query?: string): Promise<readonly Catego
   cacheLife("hours");
   cacheTag(cacheTags.products, cacheTags.categories);
 
-  const categories = await commerce.listCategories();
   const term = query?.trim();
 
   if (!term) {
     // No search: the API's own per-category totals are authoritative and cost
     // nothing extra.
+    const categories = await commerce.listCategories();
     return categories
       .filter((c) => c.productCount > 0)
       .map((c) => ({ slug: c.slug, name: c.name, count: c.productCount }));
   }
 
-  const matches = await commerce.listProducts({ search: term, limit: 100 });
+  // Independent reads against a slow upstream: run them concurrently so the
+  // cold cost is max(categories, search) rather than their sum — this
+  // function is the critical path of a first-visit search.
+  const [categories, matches] = await Promise.all([
+    commerce.listCategories(),
+    commerce.listProducts({ search: term, limit: 100 }),
+  ]);
 
   const counts = new Map<string, number>();
   for (const product of matches.items) {
