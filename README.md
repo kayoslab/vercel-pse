@@ -45,19 +45,21 @@ Cache Components (`cacheComponents: true`) inverts the old model: **nothing is c
 | Promo banner (`/`) | **dynamic**, in `<Suspense>` | The API randomises the promotion per request — a cached value would be wrong by design |
 | Product info (PDP) | `'use cache'` + per-product tag | Stable; enables full prerender of all 28 pages |
 | Stock (PDP) | **dynamic**, in `<Suspense>` | Recomputed by the API on every request (verified: three consecutive calls returned 2, 9, 19). A cached stock value is fiction |
-| Search / catalogue results | dynamic on `searchParams`, backed by a cached `listCatalogue(args)` | The *page* is per-request; the *data* is cacheable per parameter set — two shoppers on page 2 of "bags" share one entry |
-| Category list + facets | `'use cache'`, `days` / `hours` | 13 categories, effectively structural |
-| Cart + header badge | `'use cache'` keyed on token + `cacheTag('cart:{token}')` | See [the cart](#the-cart) |
-| Root metadata | `'use cache'` from `/store/config`, `days` | Title template and SEO defaults come from the commerce backend, at zero requests per page |
+| Search / catalogue results | dynamic on `searchParams`, backed by `listCatalogue(args)` with `'use cache: remote'` | The *page* is per-request; the *data* is cacheable per parameter set — two shoppers on page 2 of "bags" share one entry |
+| Category list + facets | `'use cache: remote'`, `hours` | 13 categories, effectively structural |
+| Cart + header badge | `'use cache: remote'` keyed on token + `cacheTag('cart:{token}')` | See [the cart](#the-cart) |
+| Root metadata | `'use cache: remote'` from `/store/config`, `days` | Title template and SEO defaults come from the commerce backend, at zero requests per page |
 | Lifestyle shot (PDP) | generated on demand, then **CDN-immutable for a year** | Expensive AI work as a cache-warmed asset: the image model runs once per product (a few cents for the whole catalogue), every later shopper gets CDN bytes. The caching design doubles as the abuse control — the URL space is exactly the catalogue |
 
 Tags live in one vocabulary module (`lib/cache-tags.ts`); readers (`cacheTag`) and writers (`updateTag`) share it so a typo cannot create a cache entry nobody can invalidate.
+
+**Plain `'use cache'` vs `'use cache: remote'` — a distinction serverless makes load-bearing.** Plain `'use cache'` stores entries in-memory per instance; on serverless, that memory is not shared between instances and rarely survives the request, so it effectively caches at *build time* (the prerendered shells) and informs prefetching — which is why it's right for the featured grid and product info, whose consumers are the shells themselves. Anything cached *at request time* — listings, facets, the cart, store config — uses `'use cache: remote'`: a platform-provided handler shared across all instances, with identical `cacheTag`/`updateTag` semantics. Found the empirical way: identical search queries cost ~5s on every production request while the same build served warm hits in 10ms locally; the installed docs (`use-cache.md`) name the serverless caveat outright. The fix took the search from ~5s to ~0.3s warm.
 
 ### Partial prerendering, concretely
 
 The build output tells the story — every page route is `◐ (Partial Prerender)`:
 
-- **`/products/[param]`** is the headline. With 28 products, `generateStaticParams` prerenders *every* product page at build time. Each ships as static HTML from the CDN — image, name, price, description, metadata, all in the first byte — with exactly **one** streaming hole: the `PurchasePanel` (stock indicator + quantity stepper + Add to Cart), because availability is the one thing that must be read per request. The boundary sits around all three together so the button can never be enabled for an item the indicator says is sold out.
+- **`/products/[param]`** is the headline. With 28 products, `generateStaticParams` prerenders *every* product page at build time. Each ships as static HTML from the CDN — image, name, price, description, metadata, all in the first byte — with **two** streaming holes. The first is the `PurchasePanel` (stock indicator + quantity stepper + Add to Cart), because availability must be read per request — the boundary sits around all three together so the button can never be enabled for an item the indicator says is sold out. The second is the gallery's flag-gated "See it worn" tile (a flag read is request data), with an invisible tile of the exact slot size as its fallback.
 - **`/`** prerenders the header, hero, and the entire featured grid (cached data participates in the prerender — that is the point of `'use cache'`). Two holes stream: the promo banner and the cart badge.
 - **`/search`** prerenders the heading, the search input, and the layout. The results and the facet counts stream, keyed on `searchParams`. The input sits deliberately *outside* the results boundary: if it were inside, every debounced search would re-suspend the boundary, remount the input, and take the caret with it.
 - **`/cart`** is dynamic top to bottom — it reads a cookie — so the static shell is just the heading, and the contents stream into a skeleton that mirrors the real layout's dimensions.
@@ -69,7 +71,7 @@ Moving any of these boundaries has a visible cost. Wrapping the whole PDP in one
 
 Cart mutations call `updateTag('cart:{token}')`, which expires the cached cart *immediately* — the next read blocks for fresh data instead of serving stale-while-revalidate. A shopper who just added an item must never see the old count; anything less reads as the action having failed. The agent's writes happen in a separate service outside this cache entirely, so the panel closes the loop from the client: the moment a successful cart write streams in, it calls a small Server Action (`refreshCartCache`) whose `updateTag` + re-render moves the badge in the same beat as the agent's claim of success.
 
-The cookie is read *outside* every cached scope and the token passed in as an argument — the documented pattern for combining request data with `'use cache'`, and what makes the cache entry per-session.
+The cookie is read *outside* every cached scope and the token passed in as an argument — the documented pattern for combining request data with `'use cache'`, and what makes the cache entry per-session. The entry itself lives in the remote handler, so a shopper's badge is warm no matter which instance serves their next navigation.
 
 ---
 
@@ -146,7 +148,7 @@ Two **Vercel Flags** (Flags SDK, `vercelAdapter`) gate the optional capabilities
 
 Two placements carry the platform reasoning:
 
-- **A flag read is request data**, so on the prerendered PDP it lives where all request data lives: a small Suspense hole beside stock, with the exact button rendered invisible as the fallback so the streamed decision moves nothing (CLS 0 verified in both states). The shell stays fully static. The alternative for flagged content that must be *in* the shell — hero variants, layout tests — is the Flags SDK's precompute pattern; for one button below the fold, the streamed hole is the cheaper correct boundary.
+- **A flag read is request data**, so on the prerendered PDP it lives where all request data lives: a small Suspense hole beside stock, with an invisible tile of the exact gallery-rail slot size as the fallback so the streamed decision moves nothing (CLS 0 verified in both states). The shell stays fully static. The alternative for flagged content that must be *in* the shell — hero variants, layout tests — is the Flags SDK's precompute pattern; for one tile in the gallery rail, the streamed hole is the cheaper correct boundary.
 - **The digest cron fires in the eve service**, outside any Next request, so it evaluates the same flag key through the adapter directly (`agent/lib/flags.ts`) — one toggle governs the storefront and the cron alike, because the flag store, not the framework, is the source of truth.
 
 ## The hero
@@ -159,15 +161,15 @@ The example was pulled through vgpu's tokenless examples API at an immutable rev
 
 ## Performance
 
-Measured, not eyeballed — Lighthouse against the **deployed URL**, mobile emulation:
+Measured, not eyeballed — Lighthouse against the **deployed URL**, mobile emulation (re-measured 2026-09-26; single mobile runs vary ±3–4 points, so treat Perf as a band — CLS is 0 in every run on every route, which is the engineered number):
 
 | Route | Perf | A11y | Best Practices | SEO | CLS |
 |---|---|---|---|---|---|
-| `/` | 96 | 100 | 100 | 100 | **0** |
-| `/products/[param]` | 96 | 100 | 100 | 100 | **0** |
-| `/search?q=…` | 96 | 100 | 100 | 100 | **0** |
+| `/` | 93–96 | 100 | 100 | 100 | **0** |
+| `/products/[param]` | 94–97 | 100 | 100 | 100 | **0** |
+| `/search?q=…` | 93–95 | 100 | 100 | 100 | **0** |
 
-Desktop `/` with the WebGPU hero active: **100**, TBT 0ms, CLS 0.
+Desktop `/` with the WebGPU hero active: **100**, TBT 0ms, CLS 0. Lab numbers are the experiment; **Web Analytics and Speed Insights** are wired in the root layout for the field version — Core Web Vitals from real visitors on the deployed URL.
 
 The zero CLS is engineered, and every technique is visible in the code:
 
