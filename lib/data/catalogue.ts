@@ -77,6 +77,16 @@ export async function listCatalogue({
   // serverless each instance's memory dies with it — plain "use cache" never
   // produced a warm hit in production. The remote handler shares entries
   // across instances, so one shopper's page-2 visit pays the upstream once.
+  //
+  // The remote-cache docs warn that search-filter keys can drive utilization
+  // to near zero. Weighed, and it doesn't bite here: the caveat targets fast
+  // operations, and this upstream costs ~2s against a ~30ms lookup, so even a
+  // modest hit rate wins; the key space is bounded (category and page are
+  // finite, query text over 28 products clusters on the suggestion chips);
+  // and price limits deliberately never enter the key — the agent tool layer
+  // filters price in memory, which is the doc's own mitigation. At a real
+  // catalogue's scale the answer changes: a search backend, remote-cached by
+  // normalized query.
   "use cache: remote";
   cacheLife("hours");
   cacheTag(cacheTags.products);
