@@ -95,12 +95,25 @@ function CartSkeleton() {
           </div>
         ))}
       </div>
+      {/*
+        Mirrors the order summary row for row. The heading and footnote are
+        static copy, so they render as themselves rather than as bars — the
+        footnote in particular wraps differently per width, and only the real
+        text reserves the right number of lines.
+      */}
       <div className="flex w-full flex-col gap-4 rounded-lg border border-border bg-surface p-5 lg:w-80 lg:shrink-0">
-        <Skeleton className="h-6 w-40" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-6 w-full" />
+        <h2 className="text-base font-semibold">Order summary</h2>
+        <div className="flex flex-col gap-2 text-sm">
+          <Skeleton className="h-5 w-full" />
+          <div className="border-t border-border pt-2">
+            <Skeleton className="h-6 w-full" />
+          </div>
+        </div>
         <div className="min-h-5" />
         <Skeleton className="h-12 w-full" />
+        <p className="text-xs text-muted">
+          Checkout is out of scope for this exercise — no payment is processed.
+        </p>
       </div>
     </div>
   );

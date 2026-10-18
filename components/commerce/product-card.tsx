@@ -53,9 +53,17 @@ export function ProductCard({ product, priority = false, sizes }: ProductCardPro
           className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
         />
       </div>
+      {/*
+        Both text rows pin their line-height to 20px (`leading-5`) so the
+        skeleton can reserve them with plain `h-5` rows. The earlier
+        `leading-snug` on the name made it 19.25px, and the skeleton's `gap-2`
+        against this `gap-1` added another 4px — together a ~5px taller
+        placeholder, which is exactly the kind of mismatch a skeleton exists to
+        prevent.
+      */}
       <div className="flex flex-1 flex-col gap-1 p-4">
-        <h3 className="text-sm font-medium leading-snug text-foreground">{product.name}</h3>
-        <Price value={product.price} className="text-sm text-muted" />
+        <h3 className="text-sm font-medium leading-5 text-foreground">{product.name}</h3>
+        <Price value={product.price} className="text-sm leading-5 text-muted" />
       </div>
     </Link>
   );
@@ -63,14 +71,14 @@ export function ProductCard({ product, priority = false, sizes }: ProductCardPro
 
 /**
  * The card's placeholder. Deliberately mirrors the card's own structure —
- * same aspect-square image box, same padding, same two text rows at the same
- * heights — so swapping one for the other moves nothing.
+ * same aspect-square image box, same padding, same gap, same two text rows at
+ * the same heights — so swapping one for the other moves nothing.
  */
 export function ProductCardSkeleton() {
   return (
     <div className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface-raised">
       <Skeleton className="aspect-square w-full" rounded={false} />
-      <div className="flex flex-col gap-2 p-4">
+      <div className="flex flex-col gap-1 p-4">
         <Skeleton className="h-5 w-3/4" />
         <Skeleton className="h-5 w-1/4" />
       </div>

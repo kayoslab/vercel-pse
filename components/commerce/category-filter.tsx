@@ -61,24 +61,52 @@ export function CategoryFilter({ options, basePath }: CategoryFilterProps) {
       <label htmlFor="category" className="shrink-0 text-sm text-muted">
         Category
       </label>
-      <select
-        id="category"
-        name="category"
-        value={selected}
-        onChange={(e) => onChange(e.target.value)}
-        aria-busy={pending}
-        className="h-10 min-w-0 flex-1 rounded-md border border-border bg-surface-raised px-3 text-sm text-foreground transition-opacity focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-busy:opacity-60 sm:flex-none"
-      >
-        <option value="">All categories</option>
-        {visible.map((o) => (
-          <option key={o.slug} value={o.slug}>
-            {o.name} ({o.count})
-          </option>
-        ))}
-      </select>
+      {/*
+        The select is given a fixed width on desktop rather than its intrinsic
+        one. A native select sizes itself to its longest option, and the options
+        carry per-query counts — so its width would otherwise depend on data the
+        skeleton cannot know, and every hydration would nudge the search box
+        beside it.
+
+        The chevron is drawn, not native: browsers pin the native arrow to the
+        border edge regardless of padding, so the only way to give it breathing
+        room is to hide it and position one.
+      */}
+      <div className={`relative ${SELECT_BOX}`}>
+        <select
+          id="category"
+          name="category"
+          value={selected}
+          onChange={(e) => onChange(e.target.value)}
+          aria-busy={pending}
+          className="h-10 w-full appearance-none rounded-md border border-border bg-surface-raised pl-3 pr-9 text-sm text-foreground transition-opacity focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent aria-busy:opacity-60"
+        >
+          <option value="">All categories</option>
+          {visible.map((o) => (
+            <option key={o.slug} value={o.slug}>
+              {o.name} ({o.count})
+            </option>
+          ))}
+        </select>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={1.6}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted"
+          aria-hidden
+        >
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </div>
     </div>
   );
 }
+
+/** Shared by the control and its skeleton so the two cannot drift apart. */
+const SELECT_BOX = "min-w-0 flex-1 sm:w-44 sm:flex-none";
 
 /**
  * Same dimensions as the real control. Needed because `useSearchParams` counts
@@ -89,7 +117,7 @@ export function CategoryFilterSkeleton() {
   return (
     <div className="flex items-center gap-2" aria-hidden>
       <span className="shrink-0 text-sm text-muted">Category</span>
-      <div className="h-10 min-w-0 flex-1 rounded-md border border-border bg-surface sm:w-44 sm:flex-none" />
+      <div className={`h-10 rounded-md border border-border bg-surface ${SELECT_BOX}`} />
     </div>
   );
 }

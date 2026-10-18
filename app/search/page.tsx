@@ -84,16 +84,39 @@ export default function SearchPage({ searchParams }: PageProps) {
         */}
         {/* Product cards render <h3>; this keeps the heading outline sequential. */}
         <h2 className="sr-only">Results</h2>
-        <Suspense fallback={<ProductResultsSkeleton count={RESULT_LIMIT} />}>
+        {/*
+          The outer fallback reserves the default set (what a visitor arriving
+          from the nav sees first); the keyed inner one reserves a search's
+          page size, since it only ever shows between two searches.
+        */}
+        <Suspense fallback={<ResultsSkeleton count={DEFAULT_LIMIT} />}>
           <SearchParamsBoundary
             params={["q", "category"]}
-            fallback={<ProductResultsSkeleton count={RESULT_LIMIT} />}
+            fallback={<ResultsSkeleton count={RESULT_LIMIT} />}
           >
             <Results searchParams={searchParams} />
           </SearchParamsBoundary>
         </Suspense>
       </div>
     </Container>
+  );
+}
+
+/**
+ * Mirrors `Results` exactly: the same wrapper, the same count line, then the
+ * listing skeleton with its own count line turned off. The earlier fallback
+ * reserved a count line inside the listing instead (a different gap), while
+ * the default browse state rendered none at all — a ~44px jump on first load
+ * and an 8px one on every search.
+ */
+function ResultsSkeleton({ count }: { count: number }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <p className="text-sm text-transparent" aria-hidden>
+        &nbsp;
+      </p>
+      <ProductResultsSkeleton count={count} withCount={false} />
+    </div>
   );
 }
 
@@ -129,17 +152,20 @@ async function Results({ searchParams }: PageProps) {
   const narrowedByCategory = searched && results.items.length === 0 && Boolean(category);
   const categoryLabel = category?.replace(/-/g, " ");
 
+  // The count line renders in every state so the skeleton can reserve it
+  // unconditionally. The browse state earns its line honestly: it is a sample
+  // of the catalogue, and saying so tells the shopper there is more to search.
+  const countLine = !searched
+    ? `Showing ${results.items.length} of ${results.pagination.total} products`
+    : results.pagination.total === 0
+      ? `No matches for “${query}”${narrowedByCategory ? ` in ${categoryLabel}` : ""}`
+      : `Showing ${results.items.length} of ${results.pagination.total} match${
+          results.pagination.total === 1 ? "" : "es"
+        } for “${query}”`;
+
   return (
     <div className="flex flex-col gap-4">
-      {searched && (
-        <p className="text-sm text-muted">
-          {results.pagination.total === 0
-            ? `No matches for “${query}”${narrowedByCategory ? ` in ${categoryLabel}` : ""}`
-            : `Showing ${results.items.length} of ${results.pagination.total} match${
-                results.pagination.total === 1 ? "" : "es"
-              } for “${query}”`}
-        </p>
-      )}
+      <p className="text-sm text-muted">{countLine}</p>
       <ProductResults
         products={results.items}
         priorityCount={3}
