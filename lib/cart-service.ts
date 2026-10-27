@@ -61,67 +61,69 @@ function toFailure(error: unknown, fallback: string): CartOperationResult {
   return { ok: false, error: fallback };
 }
 
+function rejection(
+  stock: StockLevel,
+  quantity: number,
+  alreadyInCart: number,
+): { error: string } | null {
+  if (!stock.inStock) return { error: "This item is out of stock." };
+  if (alreadyInCart + quantity <= stock.quantity) return null;
+  const headroom = Math.max(0, stock.quantity - alreadyInCart);
+  // Three phrasings, because "only 7 more available — your cart already has
+  // 0" is the kind of copy that makes a shopper distrust the number.
+  if (alreadyInCart === 0) return { error: `Only ${stock.quantity} available.` };
+  return {
+    error:
+      headroom === 0
+        ? `Your cart already has all ${stock.quantity} available.`
+        : `Only ${headroom} more available — your cart already has ${alreadyInCart}.`,
+  };
+}
+
 /**
  * Adds to the existing quantity — the upstream POST is additive, not absolute.
  *
- * That additivity is why the guard has to read the cart. Validating only the
- * increment against stock looks correct and is not: with 13 in stock, six adds of
- * 10 each pass individually and leave 60 units in the cart. Found by driving the
- * MCP endpoint in a loop, but the UI path had the same hole — it just takes more
- * clicking. What must be checked is the *resulting* quantity.
+ * The guard checks the *resulting* quantity, not the increment. Validating the
+ * increment alone looks correct and is not: with 13 in stock, six adds of 10
+ * each pass individually and leave 60 units in the cart. Found by driving the
+ * MCP endpoint in a loop, but the UI path had the same hole.
  *
- * The two reads run in parallel so the correctness fix costs one round trip
- * rather than two.
- *
- * `knownCart` lets a caller that already holds the current cart skip the read
- * entirely. The one caller today is the first-add path, which has just created
- * the cart — empty by construction — and the API's cart endpoints are slow
- * enough (~1.7s measured for `GET /cart`) that re-fetching a value we hold is
- * a full second and a half of spinner. `null` means "known to have no cart";
- * only `undefined` triggers the fetch.
+ * The write and the stock read run concurrently, and the guard is applied to
+ * the written result. This is a deliberate reordering for latency: against
+ * this API a stock read costs ~2.7s and the add ~2.5s, and running them in
+ * sequence made every add a five-second wait. Concurrently, an add costs the
+ * slower of the two. The price is a window of about two seconds in which the
+ * cart can hold an over-quantity before the compensation below restores the
+ * previous line — invisible to the shopper, whose UI shows the add as pending
+ * throughout, and reported honestly as a rejection when it happens. The
+ * response of the POST carries the resulting cart, so no separate cart read is
+ * needed to know what was in the line before; that removed another ~1.7s.
  */
 export async function addItem(
   token: string,
   productId: string,
   quantity: number,
-  knownCart?: Cart | null,
 ): Promise<CartOperationResult> {
   if (!Number.isInteger(quantity) || quantity < 1) {
     return { ok: false, error: "Quantity must be a whole number of at least 1." };
   }
 
   try {
-    const [stock, existingCart] = await Promise.all([
+    const [stock, cart] = await Promise.all([
       commerce.getStock(productId),
-      knownCart !== undefined ? knownCart : commerce.getCart(token),
+      commerce.addToCart(token, productId, quantity),
     ]);
 
-    if (!stock.inStock) {
-      return { ok: false, error: "This item is out of stock.", stock };
-    }
+    const lineAfter = cart.lines.find((line) => line.productId === productId)?.quantity ?? quantity;
+    const alreadyInCart = Math.max(0, lineAfter - quantity);
+    const rejected = rejection(stock, quantity, alreadyInCart);
+    if (!rejected) return { ok: true, cart };
 
-    const alreadyInCart =
-      existingCart?.lines.find((line) => line.productId === productId)?.quantity ?? 0;
-    const resulting = alreadyInCart + quantity;
-
-    if (resulting > stock.quantity) {
-      const headroom = Math.max(0, stock.quantity - alreadyInCart);
-      // Three phrasings, because "only 7 more available — your cart already has
-      // 0" is the kind of copy that makes a shopper distrust the number.
-      if (alreadyInCart === 0) {
-        return { ok: false, error: `Only ${stock.quantity} available.`, stock };
-      }
-      return {
-        ok: false,
-        error:
-          headroom === 0
-            ? `Your cart already has all ${stock.quantity} available.`
-            : `Only ${headroom} more available — your cart already has ${alreadyInCart}.`,
-        stock,
-      };
-    }
-
-    return { ok: true, cart: await commerce.addToCart(token, productId, quantity) };
+    // Compensate: put the line back the way it was, then report the rejection
+    // with the reading it was based on.
+    if (alreadyInCart === 0) await commerce.removeCartItem(token, productId);
+    else await commerce.updateCartItem(token, productId, alreadyInCart);
+    return { ok: false, error: rejected.error, stock };
   } catch (error) {
     return toFailure(error, "Could not add that item.");
   }

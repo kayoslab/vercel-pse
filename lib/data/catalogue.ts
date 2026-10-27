@@ -45,6 +45,40 @@ export async function getProduct(idOrSlug: string): Promise<Product | null> {
   return commerce.getProduct(idOrSlug);
 }
 
+/**
+ * The upstream caps a page at 100 and the catalogue has 28 products, so one
+ * read is the whole catalogue. Flagged rather than hidden: product #101 would
+ * vanish from search, the sitemap and generateStaticParams alike, and the fix
+ * at that size is a search backend, not a bigger limit.
+ */
+const CATALOGUE_LIMIT = 100;
+
+/**
+ * The whole catalogue, one cached read shared across instances.
+ *
+ * This is what makes search and the catalogue listing fast against a slow
+ * upstream. Every query used to be its own upstream round trip (~1.7s, plus
+ * ~2s for the facet counts), cached per parameter set — so the first visitor
+ * for any term paid the full cost, and a reviewer typing freely paid it on
+ * every keystroke past the threshold. Twenty-eight products fit in one
+ * response; filtering them in-process costs microseconds. The remote handler
+ * shares the entry across instances, so after the first read nobody pays the
+ * upstream again for an hour.
+ *
+ * The honest scale note: this is right for 28 products and wrong for 100,000.
+ * A real catalogue searches in a search backend with facet aggregations and
+ * remote-caches by normalised query; the shape of `listCatalogue` and
+ * `getCategoryFacets` below is the seam where that swap would happen.
+ */
+async function getCatalogue(): Promise<readonly Product[]> {
+  "use cache: remote";
+  cacheLife("hours");
+  cacheTag(cacheTags.products);
+
+  const page = await commerce.listProducts({ limit: CATALOGUE_LIMIT });
+  return page.items;
+}
+
 export type CatalogueQuery = {
   readonly query?: string;
   readonly category?: string;
@@ -52,51 +86,69 @@ export type CatalogueQuery = {
   readonly limit?: number;
 };
 
+const DEFAULT_PAGE_SIZE = 12;
+
 /**
- * One cached read behind both the catalogue page and the search page.
+ * Word-wise AND match over name, description, tags and category, which is
+ * the upstream's own search semantics as observed: every term has to appear
+ * somewhere, case-insensitively.
+ */
+function matches(product: Product, terms: readonly string[]): boolean {
+  if (terms.length === 0) return true;
+  const haystack = [product.name, product.description, product.category, ...product.tags]
+    .join(" ")
+    .toLowerCase();
+  return terms.every((term) => haystack.includes(term));
+}
+
+function searchTerms(query: string | undefined): readonly string[] {
+  return (query ?? "")
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/**
+ * One read behind both the catalogue page and the search page.
  *
  * The two differ only in which parameters they supply — the catalogue browses
- * by category and page, search narrows by term — so they share this rather than
- * each growing their own fetch. Results are dynamic *per request* but cacheable
- * *per parameter set*: the page reads `searchParams` at request time, which
- * cannot be cached, and passes plain values in here. Next.js derives the cache
- * key from those arguments, so two shoppers on page 2 of "bags" share an entry
- * while the page itself stays dynamic. That is the documented way to combine
- * runtime data with caching — read the runtime API outside the cached scope.
- *
- * Tagged `products` so a catalogue change sweeps every cached parameter
- * combination rather than leaving stale listings behind.
+ * by category and page, search narrows by term — so they share this rather
+ * than each growing their own fetch. The page reads `searchParams` at request
+ * time, which cannot be cached, and passes plain values in here; the only
+ * cached thing is the catalogue itself, read once. The caller's boundary
+ * placement is unchanged: results are still a dynamic hole keyed on the URL,
+ * they just resolve from memory instead of from the upstream.
  */
 export async function listCatalogue({
   query,
   category,
-  page,
-  limit,
+  page = 1,
+  limit = DEFAULT_PAGE_SIZE,
 }: CatalogueQuery): Promise<Page<Product>> {
-  // Remote, not in-memory: this runs per request (searchParams), and on
-  // serverless each instance's memory dies with it — plain "use cache" never
-  // produced a warm hit in production. The remote handler shares entries
-  // across instances, so one shopper's page-2 visit pays the upstream once.
-  //
-  // The remote-cache docs warn that search-filter keys can drive utilization
-  // to near zero. Weighed, and it doesn't bite here: the caveat targets fast
-  // operations, and this upstream costs ~2s against a ~30ms lookup, so even a
-  // modest hit rate wins; the key space is bounded (category and page are
-  // finite, query text over 28 products clusters on the suggestion chips);
-  // and price limits deliberately never enter the key — the agent tool layer
-  // filters price in memory, which is the doc's own mitigation. At a real
-  // catalogue's scale the answer changes: a search backend, remote-cached by
-  // normalized query.
-  "use cache: remote";
-  cacheLife("hours");
-  cacheTag(cacheTags.products);
+  const products = await getCatalogue();
+  const terms = searchTerms(query);
 
-  return commerce.listProducts({
-    search: query?.trim() || undefined,
-    category: category || undefined,
-    page,
-    limit,
-  });
+  const filtered = products.filter(
+    (product) => (!category || product.category === category) && matches(product, terms),
+  );
+
+  const total = filtered.length;
+  const totalPages = Math.max(1, Math.ceil(total / limit));
+  const current = Math.min(Math.max(1, page), totalPages);
+  const start = (current - 1) * limit;
+
+  return {
+    items: filtered.slice(start, start + limit),
+    pagination: {
+      page: current,
+      limit,
+      total,
+      totalPages,
+      hasNextPage: current < totalPages,
+      hasPreviousPage: current > 1,
+    },
+  };
 }
 
 export type CategoryFacet = {
@@ -118,46 +170,31 @@ export type CategoryFacet = {
  * excluded from its own counts, otherwise picking "Bags" would collapse the list
  * to Bags alone and there would be no way to see what else was available.
  *
- * Scale note: this derives counts by fetching all matches and grouping them,
- * which is honest for a 28-product catalogue and wrong for a large one. A real
- * store needs facet counts from the search backend — a single aggregation rather
- * than a full scan. Flagged rather than hidden because it is the first thing
- * that would have to change.
+ * Computed from the same cached catalogue as the results, so the counts and
+ * the list can never disagree, and a search costs no upstream call at all.
+ * Category display names come from the (cached) category list.
  */
 export async function getCategoryFacets(query?: string): Promise<readonly CategoryFacet[]> {
-  // Remote for the same reason as listCatalogue: query-scoped facets render
-  // per request, where in-memory entries cannot survive between instances.
-  "use cache: remote";
-  cacheLife("hours");
-  cacheTag(cacheTags.products, cacheTags.categories);
-
-  const term = query?.trim();
-
-  if (!term) {
-    // No search: the API's own per-category totals are authoritative and cost
-    // nothing extra.
-    const categories = await commerce.listCategories();
-    return categories
-      .filter((c) => c.productCount > 0)
-      .map((c) => ({ slug: c.slug, name: c.name, count: c.productCount }));
-  }
-
-  // Independent reads against a slow upstream: run them concurrently so the
-  // cold cost is max(categories, search) rather than their sum — this
-  // function is the critical path of a first-visit search.
-  const [categories, matches] = await Promise.all([
-    commerce.listCategories(),
-    commerce.listProducts({ search: term, limit: 100 }),
-  ]);
+  const [categories, products] = await Promise.all([getCategories(), getCatalogue()]);
+  const terms = searchTerms(query);
 
   const counts = new Map<string, number>();
-  for (const product of matches.items) {
+  for (const product of products) {
+    if (!matches(product, terms)) continue;
     counts.set(product.category, (counts.get(product.category) ?? 0) + 1);
   }
 
   return categories
     .map((c) => ({ slug: c.slug, name: c.name, count: counts.get(c.slug) ?? 0 }))
     .filter((c) => c.count > 0);
+}
+
+async function getCategories() {
+  "use cache: remote";
+  cacheLife("hours");
+  cacheTag(cacheTags.categories);
+
+  return commerce.listCategories();
 }
 
 /**
@@ -167,16 +204,12 @@ export async function getCategoryFacets(query?: string): Promise<readonly Catego
  * product page ships as a static shell with stock as its only dynamic hole.
  * A larger catalogue would prerender the top sellers here and let the rest
  * fill in on first request.
- *
- * The limit is explicit rather than paging to exhaustion: an unbounded loop
- * against a third-party API at build time is how a build starts timing out
- * the day someone adds ten thousand SKUs.
  */
 export async function getAllProductSlugs(): Promise<readonly string[]> {
   "use cache";
   cacheLife("hours");
   cacheTag(cacheTags.products);
 
-  const page = await commerce.listProducts({ limit: 100 });
+  const page = await commerce.listProducts({ limit: CATALOGUE_LIMIT });
   return page.items.map((product) => product.slug);
 }

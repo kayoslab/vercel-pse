@@ -8,37 +8,33 @@ type PurchasePanelProps = {
 };
 
 /**
- * The product page's only dynamic hole.
+ * The product page's only dynamic hole, now narrowed to the availability line.
  *
- * Availability, the quantity ceiling and the button's disabled state are all
- * derived from one stock reading, so they stream as a single unit. Splitting
- * them would mean two boundaries resolving independently and a window in which
- * the button is enabled for an item the indicator already says is sold out.
- * The reading is handed to one client component (PurchaseControls) so a failed
- * add can move all three to the fresher number the guard rejected on.
+ * The stock read is started here and handed to the client as a promise rather
+ * than awaited. That puts the quantity stepper and the Add to Cart button in
+ * the static shell, live from the first paint, while availability streams in
+ * beside them. Against this API the stock read takes ~2.7s, and awaiting it
+ * meant the most important control on the page was disabled for that long on
+ * every visit.
+ *
+ * Enabling the button before stock is known is safe because the Server Action
+ * re-reads stock on every add and rejects what it cannot fulfil; the page's
+ * reading was only ever advisory. A click on a sold-out item gets the same
+ * rejection copy it always did, and the controls adopt the guard's reading so
+ * label, ceiling and message agree on one number.
  *
  * Everything else on the page — image, name, price, description — is cached and
  * ships in the prerendered shell.
  */
-export async function PurchasePanel({ productId }: PurchasePanelProps) {
-  const stock = await getStock(productId);
+export function PurchasePanel({ productId }: PurchasePanelProps) {
+  const stock = getStock(productId);
 
-  return <PurchaseControls productId={productId} initialStock={stock} />;
+  return <PurchaseControls productId={productId} stockPromise={stock} />;
 }
 
 /**
- * The fallback renders the *real* control row, disabled.
- *
- * The obvious version of this is a pair of grey boxes, and it would be worse.
- * On a storefront the buy button is the most important element on the page, and
- * a product page that briefly shows no way to purchase reads as broken. So the
- * shell carries a genuine, correctly-sized "Add to Cart" button in a disabled
- * state, with "Checking availability…" above it explaining why — and it is
- * disabled rather than enabled because failing closed is the only safe default
- * before stock is known.
- *
- * It reuses `Button` so the dimensions cannot drift from the interactive
- * version, and ships no JavaScript of its own.
+ * The fallback for the rare case the panel itself cannot render — kept as the
+ * real control row, disabled, so the dimensions never drift.
  */
 export function PurchasePanelSkeleton() {
   return (

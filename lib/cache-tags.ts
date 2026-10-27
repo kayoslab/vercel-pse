@@ -18,6 +18,9 @@ export const cacheTags = {
 
   categories: "categories",
 
+  /** The promotional banner's one-minute entry. */
+  promotions: "promotions",
+
   storeConfig: "store-config",
 
   /** Per-session cart. The token is opaque and already unguessable. */
