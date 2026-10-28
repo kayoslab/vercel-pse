@@ -16,9 +16,10 @@ import { NextResponse } from "next/server";
  * one frequency guaranteed on every Vercel plan). Vercel signs cron
  * invocations with `Authorization: Bearer $CRON_SECRET` automatically, so the
  * guard below is what makes this the Vercel scheduler's request and not
- * anyone who finds the URL. A cron entry still can't fire on a deploy, so
- * this is also hit by hand right after one — `vercel.json` closes the "nobody
- * remembered" case, not the "right after shipping" one.
+ * anyone who finds the URL. A cron entry can't fire on a deploy, so
+ * `.github/workflows/warm-after-deploy.yml` calls this with the same token
+ * when a production deployment succeeds — the cron closes the "nobody
+ * remembered" case, the workflow the "right after shipping" one.
  *
  * Fails closed: a missing `CRON_SECRET` denies the request rather than
  * admitting it. The earlier version only checked the header when the secret
