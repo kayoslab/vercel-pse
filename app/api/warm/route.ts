@@ -11,8 +11,19 @@ import { NextResponse } from "next/server";
  * costs tens of milliseconds. One pass over the routes a visitor is likely to
  * hit first turns the cold case into something nobody sees.
  *
- * Hit after each deploy and on a schedule. Protected by the cron secret so it
- * cannot be used to make the store fetch its own pages on demand.
+ * Registered as a Vercel Cron (`vercel.json`, daily at 06:00 UTC — an hour
+ * ahead of the catalogue-health digest, and once a day because that is the
+ * one frequency guaranteed on every Vercel plan). Vercel signs cron
+ * invocations with `Authorization: Bearer $CRON_SECRET` automatically, so the
+ * guard below is what makes this the Vercel scheduler's request and not
+ * anyone who finds the URL. A cron entry still can't fire on a deploy, so
+ * this is also hit by hand right after one — `vercel.json` closes the "nobody
+ * remembered" case, not the "right after shipping" one.
+ *
+ * Fails closed: a missing `CRON_SECRET` denies the request rather than
+ * admitting it. The earlier version only checked the header when the secret
+ * was set, which meant an unset secret — the state this project was
+ * deployed in until now — left the route open to anyone.
  */
 const PATHS = [
   "/",
@@ -29,8 +40,11 @@ const PATHS = [
 
 export async function GET(request: Request) {
   const secret = process.env.CRON_SECRET;
+  if (!secret) {
+    return NextResponse.json({ error: "CRON_SECRET not configured" }, { status: 500 });
+  }
   const auth = request.headers.get("authorization");
-  if (secret && auth !== `Bearer ${secret}`) {
+  if (auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
