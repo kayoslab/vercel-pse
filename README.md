@@ -45,7 +45,7 @@ Cache Components (`cacheComponents: true`) inverts the old model: **nothing is c
 | Promo banner (`/`) | `'use cache: remote'`, one minute, in `<Suspense>` | The API randomises the promotion per request *and* answers in ~2.7s. One minute of sharing fixes both: the banner stops flipping as the shopper navigates (which read as a bug), and the homepage's only hole fills from the cache. A life under five minutes is excluded from the prerender, so it is still a streamed hole |
 | Product info (PDP) | `'use cache'` + per-product tag | Stable; enables full prerender of all 28 pages |
 | Stock (PDP) | **dynamic**, in `<Suspense>` | Recomputed by the API on every request (verified: three consecutive calls returned 2, 9, 19). A cached stock value is fiction. The hole is the availability line only — the stepper and the button ship in the static shell, enabled, because the action re-reads stock on every add |
-| Search / catalogue results | dynamic on `searchParams`, computed over the full catalogue held in `'use cache: remote'` | The *page* is per-request; the *data* is one cached read of all 28 products, filtered in-process. Any query answers from memory. The honest scale note: right for 28 products, wrong for 100,000 — a real catalogue searches in a search backend, and `listCatalogue` is the seam where that swap happens |
+| Search / catalogue results | dynamic on `searchParams`, computed over the full catalogue held in `'use cache: remote'` | The *page* is per-request; the *data* is one cached read of all 28 products, filtered in-process. Any query answers from memory. A review-time shortcut and a deliberate deviation from the brief's backend search: right for 28 products, wrong for 100,000 — a real catalogue searches in a search backend, and `listCatalogue` is the seam where that swap happens. See [trade-offs](#trade-offs-taken-for-review-latency-2026-10-27) |
 | Category list + facets | `'use cache: remote'`, `hours`; facets computed from the cached catalogue | 13 categories, effectively structural; facet counts and results come from the same list, so they can never disagree |
 | Cart + header badge | `'use cache: remote'` keyed on token + `cacheTag('cart:{token}')` | See [the cart](#the-cart) |
 | Root metadata | `'use cache: remote'` from `/store/config`, `days` | Title template and SEO defaults come from the commerce backend, at zero requests per page |
@@ -79,7 +79,7 @@ The cookie is read *outside* every cached scope and the token passed in as an ar
 
 ## The cart
 
-The cart is server-side and Redis-backed, owned by the commerce API. The app owns only an anonymous UUID token, held in an **httpOnly, secure, sameSite=lax cookie** — the token is the only credential protecting the cart, so an XSS bug must not be able to read it. The cart is created lazily on first add; visitors who never buy never cost an upstream write.
+The cart is server-side and Redis-backed, owned by the commerce API. The app owns only an anonymous UUID token, held in an **httpOnly, secure, sameSite=lax cookie** — the token is the only credential protecting the cart, so an XSS bug must not be able to read it. The cart is created in the background when a product page's controls mount (since 2026-10-27; before that, lazily on first add), so the ~2.5s cart creation happens while the shopper reads rather than inside their first click. Visitors who never open a product page never cost an upstream write; the trade is recorded under [trade-offs](#trade-offs-taken-for-review-latency-2026-10-27).
 
 - **All mutations are Server Actions** (`lib/actions/cart.ts`) — no client fetches, no route handlers.
 - **Quantity and removal move instantly through an explicit pending overlay** — deliberately *not* `useOptimistic` + `startTransition`: an awaited Server Action inside a transition entangles with every later navigation, freezing the site for the mutation's whole round trip on slow connections (measured: 83ms → 4,166ms; `cart-contents.tsx` documents the model). Lines and the subtotal derive from one overlay so they always agree; a removing line stays visible, dimmed, with a spinner. An overlay entry clears when the revalidated props *confirm* it — not when the promise resolves — and a failure rolls back only its own entry, with a message explaining why nothing changed. The header badge joins the same moment through a shared pending-delta context (the pattern behind Next.js Commerce's cart store): the server-streamed count stays the source of truth, in-flight mutations add their delta, and a settled mutation bridges the settle gap with the count the action itself reported.
@@ -95,7 +95,8 @@ Details that took iteration:
 
 - A new search term **clears a lingering category filter** — otherwise a stale "mugs" filter silently empties a search for "hoodie" and the message blames the search term.
 - **Facet counts are scoped to the active query.** A dropdown claiming "Mugs (2)" during a search that matches no mugs is a lie; counts are computed against the result set the shopper is looking at, and empty categories are dropped — except a *selected* category, which is re-added with its 0 so the control never lies about what filter is in force.
-- During a search the previous results stay on screen (React transition) and an explicit "Searching…" indicator appears in a fixed-width slot — acknowledgement without replacing real content with grey boxes on every keystroke.
+- A new search **re-shows the results skeleton** through a boundary keyed on the query and category (`SearchParamsBoundary`) rather than leaving the old results frozen on screen; the input keeps its caret because it sits in its own boundary, and a "Searching…" indicator in a fixed-width slot covers the sub-second case.
+- **Where the search runs is a review-time shortcut, not the design.** The brief implies the API's search endpoint, and that is the right shape for a real catalogue. Since 2026-10-27 the storefront reads the whole 28-product catalogue once (`'use cache: remote'`) and filters it in memory with the upstream's observed semantics (every term must appear in name, description, tags or category), because the endpoint costs ~1.7s per new term and a reviewer typing freely paid it on every search. It is only acceptable because the catalogue is tiny; see the trade-offs section for what it owes.
 
 ## The agentic layer
 
@@ -171,7 +172,18 @@ Measured, not eyeballed — Lighthouse against the **deployed URL**, mobile emul
 | `/products/[param]` | 94–97 | 100 | 100 | 100 | **0** |
 | `/search?q=…` | 93–95 | 100 | 100 | 100 | **0** |
 
-Desktop `/` with the WebGPU hero active: **100**, TBT 0ms, CLS 0. Lab numbers are the experiment; **Web Analytics and Speed Insights** are wired in the root layout for the field version — Core Web Vitals from real visitors on the deployed URL.
+Desktop `/` with the WebGPU hero active: **100**, TBT 0ms, CLS 0. Lab numbers are the experiment; **Web Analytics and Speed Insights** are wired in the root layout for the field version — Core Web Vitals from real visitors on the deployed URL (2026-10-27 field data: FCP 0.81s, INP 64ms).
+
+Those numbers were green while the site felt slow, so they are not the whole story. The commerce API answers in 1.5–3s per call, and the things a person clicks on waited for it. Measured on production with a Playwright script that times what a human waits for, before and after the 2026-10-27 changes:
+
+| What a person waits for | Before | After |
+|---|---|---|
+| Promo bar filled | 3.2s | 0.6s |
+| Add to Cart usable | 3.4s | 0.4s |
+| First add settled | 7.5s | 2.9s |
+| Second add settled | 4.2s | 2.9s |
+| Search results, cold term | 3.1s | 0.5s |
+| Availability line on a product page | 3.4s | 2.8s (upstream, uncached by design) |
 
 The zero CLS is engineered, and every technique is visible in the code:
 
@@ -225,6 +237,18 @@ lib/
 ```
 
 Conventions throughout: Server Components by default, `'use client'` only where interactivity demands it; prices stay integer cents until render (`Intl.NumberFormat`, one shared helper); one API client owns the envelope, the bypass header, and error mapping.
+
+## Trade-offs taken for review latency (2026-10-27)
+
+The upstream API costs 1.5–3s per call. The changes that made the store feel fast each took a shortcut that a production storefront on a real commerce backend should not keep as-is. Listed so nobody mistakes the speed for an architectural win:
+
+- **Search runs in the storefront, not in the backend.** Only valid at 28 products; the brief implies the API's search endpoint. The in-memory matcher approximates the upstream's semantics and can diverge on edge cases (tokenisation, which fields count). `limit: 100` on the catalogue read is silently load-bearing: product #101 would vanish from search, the catalogue page, the sitemap and `generateStaticParams`. *Production shape:* queries go back to a search backend with facet aggregation, remote-cached by normalised query; `listCatalogue` and `getCategoryFacets` are the seam.
+- **Promotions are shared for one minute**, including a `null` cached for a minute during an outage. The brief says dynamic. *Production shape:* keep the short life for coherence, invalidate the `promotions` tag from a campaign webhook so a change is live immediately.
+- **The add writes before the guard has answered.** The stock read and the write run concurrently; on rejection the previous line is restored. For about two seconds another consumer of the same cart (the assistant, an MCP client) can read an over-quantity. If the compensating write itself fails, the cart keeps the over-quantity and the shopper sees a rejection; this is logged, not retried. The rejection path costs two writes (~6s) instead of one. *Production shape:* the commerce backend enforces stock on write (this one accepts `quantity: 9999`), or exposes reserve-then-commit; the guard then becomes a UX nicety rather than the only belt.
+- **The quantity ceiling is 99 until stock arrives.** A shopper can request more than is available in the first second or two; the add is rejected honestly and the stepper clamps once stock streams in. *Production shape:* the same, but with the ceiling from a cached catalogue-level stock hint if the backend had one.
+- **A cart is created for every new visitor who opens a product page**, bots included, plus a validating cart read on every product-page visit for returning visitors. Bounded by the API's 24h inactivity expiry, but it is upstream writes bought with the shopper's attention. *Production shape:* create on an intent signal (focus or hover on the controls), or make creation cheap in the backend.
+- **`/api/warm` is unscheduled and only guarded when `CRON_SECRET` is set.** eve owns this project's cron registration, so the route is hit by hand after deploys. *Production shape:* a deploy hook or a scheduled job with the secret set.
+- **The "reviewer's clock" measurement is not in the repository.** It is a Playwright script kept outside, because adding Playwright and a browser download is a provisioning step this repo has avoided. *Production shape:* `scripts/wait-times.mjs` as a CI job against the preview URL, with budgets.
 
 ## Deliberately out of scope
 

@@ -55,6 +55,14 @@ export function PurchaseControls({ productId, stockPromise }: PurchaseControlsPr
   const ceiling = stock?.quantity ?? UNKNOWN_STOCK_CEILING;
   const disabled = stock !== null && !stock.inStock;
 
+  // One place adopts a reading, whether it streamed in or came back with a
+  // rejection, and clamps the quantity to it: a shopper who raised the stepper
+  // before stock was known must not be left holding a number above the ceiling.
+  const adopt = (reading: StockLevel) => {
+    setStock(reading);
+    setQuantity((q) => Math.max(1, Math.min(q, Math.max(1, reading.quantity))));
+  };
+
   const submit = () => {
     setPending(true);
     setError(null);
@@ -63,10 +71,7 @@ export function PurchaseControls({ productId, stockPromise }: PurchaseControlsPr
       .then((result) => {
         if (result.ok) return;
         setError(result.error);
-        if (result.stock) {
-          setStock(result.stock);
-          setQuantity((q) => Math.max(1, Math.min(q, result.stock ? result.stock.quantity : q)));
-        }
+        if (result.stock) adopt(result.stock);
       })
       .catch(() => setError("Something went wrong — please try again."))
       .finally(() => setPending(false));
@@ -75,7 +80,7 @@ export function PurchaseControls({ productId, stockPromise }: PurchaseControlsPr
   return (
     <div className="flex flex-col gap-5">
       <Suspense fallback={<StockIndicatorSkeleton />}>
-        <StreamedStock promise={stockPromise} override={stock} onResolved={setStock} />
+        <StreamedStock promise={stockPromise} override={stock} onResolved={adopt} />
       </Suspense>
 
       <div className="flex flex-col gap-4">
